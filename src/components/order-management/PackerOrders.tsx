@@ -29,6 +29,7 @@ import {
   PackagePlus,
   Wifi,
   WifiOff,
+  Grid3X3,
 } from "lucide-react";
 import {
   Table,
@@ -109,6 +110,36 @@ export default function PackerOrders() {
       case 'pending': return 'bg-warning/10 text-warning border-warning/20';
       case 'out_of_stock': return 'bg-destructive/10 text-destructive border-destructive/20';
       default: return 'bg-muted text-muted-foreground';
+    }
+  };
+
+  // Handler functions for action buttons
+  const handleReassignOrder = (orderId: string) => {
+    console.log('🔄 Reassigning order:', orderId);
+    // TODO: Implement reassign functionality
+  };
+
+  const handleStartOrder = (orderId: string) => {
+    const order = orders.find(o => o.id === orderId);
+    if (order) {
+      console.log('🚀 Starting order:', orderId);
+      // TODO: Implement start functionality
+    }
+  };
+
+  const handleCompleteOrder = (orderId: string) => {
+    const order = orders.find(o => o.id === orderId);
+    if (order) {
+      console.log('✅ Completing order:', orderId);
+      // TODO: Implement complete functionality
+    }
+  };
+
+  const handleItemsNoStock = (orderId: string) => {
+    const order = orders.find(o => o.id === orderId);
+    if (order) {
+      console.log('🔴 Marking order as out of stock:', orderId);
+      // TODO: Implement items no stock functionality
     }
   };
 
@@ -284,12 +315,13 @@ export default function PackerOrders() {
                         <TableHead>Pincode</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead>Sync</TableHead>
+                        <TableHead>Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {filteredOrders.length === 0 ? (
                         <TableRow>
-                        <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                        <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                           No orders found
                         </TableCell>
                         </TableRow>
@@ -324,6 +356,48 @@ export default function PackerOrders() {
                               <div className="flex items-center gap-2">
                                 <WifiOff className="h-4 w-4 text-red-500" />
                                 <span className="text-sm text-gray-700">Sync</span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap">
+                              <div className="flex items-center gap-1">
+                                <Button 
+                                  variant="outline" 
+                                  size="sm" 
+                                  className="h-7 px-2 text-xs"
+                                  onClick={() => handleReassignOrder(order.id)}
+                                >
+                                  Reassign
+                                </Button>
+                                <Button 
+                                  variant="outline" 
+                                  size="sm" 
+                                  className="h-7 px-2 text-xs"
+                                  onClick={() => handleStartOrder(order.id)}
+                                >
+                                  <Grid3X3 className="h-3 w-3 mr-1" />
+                                  Start
+                                </Button>
+                                <Button 
+                                  variant="outline" 
+                                  size="sm" 
+                                  className="h-7 px-2 text-xs text-green-600 border-green-300 hover:bg-green-50"
+                                  onClick={() => handleCompleteOrder(order.id)}
+                                >
+                                  <Grid3X3 className="h-3 w-3 mr-1" />
+                                  Complete
+                                </Button>
+                                <Button 
+                                  variant="outline" 
+                                  size="sm" 
+                                  className="h-7 px-2 text-xs text-red-600 border-red-300 hover:bg-red-50"
+                                  onClick={() => handleItemsNoStock(order.id)}
+                                >
+                                  <Grid3X3 className="h-3 w-3 mr-1" />
+                                  Items No Stock
+                                </Button>
+                                <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+                                  <MoreVertical className="h-4 w-4" />
+                                </Button>
                               </div>
                             </TableCell>
                           </TableRow>

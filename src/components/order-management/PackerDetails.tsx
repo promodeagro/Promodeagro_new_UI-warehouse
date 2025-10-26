@@ -1,31 +1,30 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { toast } from "sonner";
 import { 
   User, 
   FileText, 
-  TrendingUp, 
   Calendar, 
   Phone, 
   Mail, 
   MapPin, 
   CreditCard,
   Building,
-  CheckCircle2,
-  Clock,
-  Package,
-  Target,
   ArrowLeft,
   Save,
   Edit,
   Upload,
   Eye,
-  Download
+  Download,
+  Ban,
+  X
 } from "lucide-react";
 import { packers } from "@/data/packerData";
 
@@ -34,6 +33,9 @@ export default function PackerDetails() {
   const navigate = useNavigate();
   const [isEditing, setIsEditing] = useState(false);
   const [editedPacker, setEditedPacker] = useState<any>(null);
+  const [isSuspended, setIsSuspended] = useState(false);
+  const [profileImage, setProfileImage] = useState<string | null>(null);
+  const [uploadedDocuments, setUploadedDocuments] = useState<Record<string, string>>({});
 
   // Find the packer
   const packer = packers.find(p => p.id === packerId);
@@ -57,16 +59,85 @@ export default function PackerDetails() {
     setEditedPacker(packer);
   }
 
+  // Load sample documents for testing (remove this in production)
+  useEffect(() => {
+    const sampleDocuments = {
+      'aadhar_front': 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMzAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iI2Y5ZjlmOSIvPjx0ZXh0IHg9IjE1MCIgeT0iMTAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiMzMzMiPkFhZGhhciBGcm9udDwvdGV4dD48L3N2Zz4=',
+      'pan': 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMzAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iI2Y5ZjlmOSIvPjx0ZXh0IHg9IjE1MCIgeT0iMTAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiMzMzMiPlBBTiBDYXJkPC90ZXh0Pjwvc3ZnPg=='
+    };
+    setUploadedDocuments(sampleDocuments);
+  }, []);
+
   const handleSave = () => {
     // Save logic here - would sync with backend
     console.log("Saving packer data:", editedPacker);
+    
+    // Save to localStorage (ready for database integration)
+    const savedPackers = JSON.parse(localStorage.getItem('warehouse-packers') || '[]');
+    const updatedPackers = savedPackers.map((p: any) => 
+      p.id === packerId ? { ...p, ...editedPacker } : p
+    );
+    localStorage.setItem('warehouse-packers', JSON.stringify(updatedPackers));
+    
+    toast.success("Packer details saved successfully!");
     setIsEditing(false);
-    // In real app, this would update the packer data in context/state
   };
 
   const handleCancel = () => {
     setEditedPacker(packer);
     setIsEditing(false);
+  };
+
+  const handleSuspendAccount = () => {
+    setIsSuspended(true);
+    toast.warning(`${packer.name} account suspended. No new orders will be assigned.`);
+  };
+
+  const handleUnsuspendAccount = () => {
+    setIsSuspended(false);
+    toast.success(`${packer.name} account unsuspended. Normal functionality restored.`);
+  };
+
+  const handleProfileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const result = e.target?.result as string;
+        setProfileImage(result);
+        toast.success("Profile picture uploaded successfully!");
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleDocumentUpload = (documentType: string, event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      // Validate file size (max 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error("File size must be less than 5MB");
+        return;
+      }
+
+      // Validate file type
+      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'application/pdf'];
+      if (!allowedTypes.includes(file.type)) {
+        toast.error("Please upload only images (JPG, PNG, GIF) or PDF files");
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const result = e.target?.result as string;
+        setUploadedDocuments(prev => ({
+          ...prev,
+          [documentType]: result
+        }));
+        toast.success(`${documentType.replace('_', ' ')} uploaded successfully!`);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const getSyncStatusColor = (status: string) => {
@@ -113,6 +184,12 @@ export default function PackerDetails() {
           <Badge className={getSyncStatusColor(packer.sync_status)}>
             {getSyncStatusIcon(packer.sync_status)} {packer.sync_status.toUpperCase()}
           </Badge>
+          {isSuspended && (
+            <Badge variant="destructive" className="bg-red-500 text-white">
+              <Ban className="h-3 w-3 mr-1" />
+              SUSPENDED
+            </Badge>
+          )}
           {isEditing ? (
             <div className="flex gap-2">
               <Button variant="outline" onClick={handleCancel}>
@@ -133,7 +210,7 @@ export default function PackerDetails() {
       </div>
 
       <Tabs defaultValue="personal" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="personal" className="gap-2">
             <User className="h-4 w-4" />
             Personal Info
@@ -142,19 +219,81 @@ export default function PackerDetails() {
             <FileText className="h-4 w-4" />
             Verification & Documents
           </TabsTrigger>
-          <TabsTrigger value="performance" className="gap-2">
-            <TrendingUp className="h-4 w-4" />
-            Performance & Stats
-          </TabsTrigger>
         </TabsList>
 
         {/* Personal Info Tab */}
         <TabsContent value="personal" className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Personal Information</CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle>Personal Information</CardTitle>
+                <div className="flex items-center gap-5">
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="active-toggle" className="text-sm font-medium">
+                      Active/Inactive
+                    </Label>
+                    <Switch
+                      id="active-toggle"
+                      checked={editedPacker?.is_active ?? true}
+                      onCheckedChange={(checked) => setEditedPacker({ ...editedPacker, is_active: checked })}
+                      disabled={!isEditing}
+                    />
+                  </div>
+                  <Button 
+                    variant="destructive" 
+                    size="sm" 
+                    disabled={!isEditing || isSuspended}
+                    onClick={handleSuspendAccount}
+                  >
+                    {isSuspended ? "Suspended" : "Suspend Account"}
+                  </Button>
+                  {isSuspended && (
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={handleUnsuspendAccount}
+                      className="ml-2"
+                    >
+                      Unsuspend Account
+                    </Button>
+                  )}
+                </div>
+              </div>
             </CardHeader>
             <CardContent>
+              {/* Profile Picture Upload Section */}
+              <div className="flex justify-center mb-6">
+                <div className="relative">
+                  <div className="w-24 h-24 rounded-full bg-gray-100 flex items-center justify-center border-2 border-gray-200 overflow-hidden">
+                    {profileImage ? (
+                      <img 
+                        src={profileImage} 
+                        alt="Profile" 
+                        className="w-full h-full object-cover rounded-full"
+                      />
+                    ) : (
+                      <User className="w-8 h-8 text-gray-400" />
+                    )}
+                  </div>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleProfileUpload}
+                    className="hidden"
+                    id="profile-upload"
+                    disabled={!isEditing}
+                  />
+                  <Button
+                    size="icon"
+                    className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-white border-2 border-gray-300 hover:bg-gray-50"
+                    onClick={() => document.getElementById('profile-upload')?.click()}
+                    disabled={!isEditing}
+                  >
+                    <Upload className="h-4 w-4 text-gray-600" />
+                  </Button>
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-6">
                 <div className="space-y-2">
                   <Label htmlFor="packer-id">Packer ID</Label>
@@ -259,12 +398,14 @@ export default function PackerDetails() {
                   <Label htmlFor="address">Address *</Label>
                   <div className="relative">
                     <MapPin className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                    <Input
+                    <textarea
                       id="address"
                       value={editedPacker?.address || ''}
                       onChange={(e) => setEditedPacker({ ...editedPacker, address: e.target.value })}
-                      className="pl-10"
+                      className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 pl-10 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-y"
+                      placeholder="Enter your full address"
                       disabled={!isEditing}
+                      rows={3}
                     />
                   </div>
                 </div>
@@ -283,9 +424,10 @@ export default function PackerDetails() {
                   <Label htmlFor="zone">Zone</Label>
                   <Input
                     id="zone"
-                    value="Promode Agro"
-                    disabled={true}
-                    className="bg-muted"
+                    value={editedPacker?.zone || 'Promode Agro'}
+                    onChange={(e) => setEditedPacker({ ...editedPacker, zone: e.target.value })}
+                    disabled={!isEditing}
+                    placeholder="Enter zone"
                   />
                 </div>
               </div>
@@ -308,6 +450,28 @@ export default function PackerDetails() {
                     value={editedPacker?.aadhar_number || ''}
                     onChange={(e) => setEditedPacker({ ...editedPacker, aadhar_number: e.target.value })}
                     placeholder="XXXX-XXXX-XXXX"
+                    disabled={!isEditing}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="qualification">Qualification</Label>
+                  <Input
+                    id="qualification"
+                    value={editedPacker?.qualification || 'Bachelor of Commerce'}
+                    onChange={(e) => setEditedPacker({ ...editedPacker, qualification: e.target.value })}
+                    placeholder="Enter qualification"
+                    disabled={!isEditing}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="role">Role of Person</Label>
+                  <Input
+                    id="role"
+                    value={editedPacker?.role || 'Warehouse Packer'}
+                    onChange={(e) => setEditedPacker({ ...editedPacker, role: e.target.value })}
+                    placeholder="Enter role"
                     disabled={!isEditing}
                   />
                 </div>
@@ -343,9 +507,24 @@ export default function PackerDetails() {
                     <CreditCard className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                     <Input
                       id="account-number"
-                      value={editedPacker?.account_number || ''}
+                      value={editedPacker?.account_number || '78901234567890'}
                       onChange={(e) => setEditedPacker({ ...editedPacker, account_number: e.target.value })}
                       className="pl-10"
+                      disabled={!isEditing}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="reconfirm-account">Re-Confirm Account Name</Label>
+                  <div className="relative">
+                    <CreditCard className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="reconfirm-account"
+                      value={editedPacker?.reconfirm_account_name || '78901234567890'}
+                      onChange={(e) => setEditedPacker({ ...editedPacker, reconfirm_account_name: e.target.value })}
+                      className="pl-10"
+                      placeholder="Re-enter account holder name"
                       disabled={!isEditing}
                     />
                   </div>
@@ -371,20 +550,123 @@ export default function PackerDetails() {
                     { name: 'Aadhar Back', key: 'aadhar_back' },
                     { name: 'PAN Card', key: 'pan' },
                     { name: 'Bank Passbook', key: 'bank_passbook' },
+                    { name: 'Qualification Certificate', key: 'qualification_upload' },
+                    { name: 'Address Proof', key: 'address_proof' },
                   ].map((doc) => (
                     <div key={doc.key} className="border rounded-lg p-4 space-y-3">
                       <div className="flex items-center justify-between">
                         <span className="text-sm font-medium">{doc.name}</span>
-                        <CheckCircle2 className="h-4 w-4 text-success" />
+                        <span className="text-green-500">
+                          {uploadedDocuments[doc.key] ? "✓" : "✗"}
+                        </span>
                       </div>
+                      {uploadedDocuments[doc.key] && (
+                        <div className="text-xs text-gray-500 mb-2">
+                          Uploaded: {new Date().toLocaleDateString()}
+                        </div>
+                      )}
                       <div className="flex gap-2">
-                        <Button variant="outline" size="sm" className="flex-1">
-                          <Eye className="h-4 w-4 mr-1" />
-                          View
-                        </Button>
-                        <Button variant="outline" size="sm" className="flex-1">
+                        {uploadedDocuments[doc.key] && (
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            className="flex-1"
+                            onClick={() => {
+                              const documentData = uploadedDocuments[doc.key];
+                              const isPDF = documentData.startsWith('data:application/pdf');
+                              
+                              // Create a new window with proper content
+                              const newWindow = window.open('', '_blank');
+                              if (newWindow) {
+                                if (isPDF) {
+                                  // For PDF files, embed the PDF viewer
+                                  newWindow.document.write(`
+                                    <html>
+                                      <head>
+                                        <title>${doc.name}</title>
+                                        <style>
+                                          body { margin: 0; padding: 0; background: #f5f5f5; }
+                                          .container { max-width: 100%; margin: 0 auto; background: white; }
+                                          h1 { color: #333; margin: 20px; text-align: center; }
+                                          .pdf-viewer { width: 100%; height: calc(100vh - 80px); }
+                                          .download-btn { 
+                                            position: fixed; top: 20px; right: 20px;
+                                            background: #007bff; color: white; padding: 10px 20px; 
+                                            border: none; border-radius: 4px; cursor: pointer; 
+                                            text-decoration: none; display: inline-block; z-index: 1000;
+                                          }
+                                          .download-btn:hover { background: #0056b3; }
+                                        </style>
+                                      </head>
+                                      <body>
+                                        <h1>${doc.name}</h1>
+                                        <a href="${documentData}" download="${doc.name}.pdf" class="download-btn">
+                                          Download PDF
+                                        </a>
+                                        <iframe src="${documentData}" class="pdf-viewer" frameborder="0"></iframe>
+                                      </body>
+                                    </html>
+                                  `);
+                                } else {
+                                  // For image files, show the image
+                                  newWindow.document.write(`
+                                    <html>
+                                      <head>
+                                        <title>${doc.name}</title>
+                                        <style>
+                                          body { margin: 0; padding: 20px; background: #f5f5f5; }
+                                          .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+                                          h1 { color: #333; margin-bottom: 20px; text-align: center; }
+                                          .document-viewer { text-align: center; }
+                                          img { max-width: 100%; height: auto; border: 1px solid #ddd; border-radius: 4px; }
+                                          .download-btn { 
+                                            background: #007bff; color: white; padding: 10px 20px; 
+                                            border: none; border-radius: 4px; cursor: pointer; 
+                                            margin-top: 10px; text-decoration: none; display: inline-block;
+                                          }
+                                          .download-btn:hover { background: #0056b3; }
+                                        </style>
+                                      </head>
+                                      <body>
+                                        <div class="container">
+                                          <h1>${doc.name}</h1>
+                                          <div class="document-viewer">
+                                            <img src="${documentData}" alt="${doc.name}" />
+                                            <br>
+                                            <a href="${documentData}" download="${doc.name}.jpg" class="download-btn">
+                                              Download Document
+                                            </a>
+                                          </div>
+                                        </div>
+                                      </body>
+                                    </html>
+                                  `);
+                                }
+                                newWindow.document.close();
+                              }
+                            }}
+                          >
+                            <Eye className="h-4 w-4 mr-1" />
+                            View
+                          </Button>
+                        )}
+                        <input
+                          type="file"
+                          accept="image/*,.pdf"
+                          onChange={(e) => handleDocumentUpload(doc.key, e)}
+                          className="hidden"
+                          id={`upload-${doc.key}`}
+                          disabled={!isEditing}
+                        />
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="flex-1"
+                          onClick={() => document.getElementById(`upload-${doc.key}`)?.click()}
+                          disabled={!isEditing}
+                        >
                           <Upload className="h-4 w-4 mr-1" />
-                          Reupload
+                          {uploadedDocuments[doc.key] ? "Reupload" : "Upload"}
                         </Button>
                       </div>
                     </div>
@@ -395,97 +677,28 @@ export default function PackerDetails() {
           </Card>
         </TabsContent>
 
-        {/* Performance Tab */}
-        <TabsContent value="performance" className="space-y-6">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Package className="h-4 w-4" />
-                  <span className="text-sm">Total Assigned</span>
-                </div>
-                <p className="text-2xl font-bold text-foreground">{packer.assigned_orders}</p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <CheckCircle2 className="h-4 w-4" />
-                  <span className="text-sm">Packed</span>
-                </div>
-                <p className="text-2xl font-bold text-success">{packer.packed_orders}</p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Clock className="h-4 w-4" />
-                  <span className="text-sm">Pending</span>
-                </div>
-                <p className="text-2xl font-bold text-warning">{packer.pending_orders}</p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Target className="h-4 w-4" />
-                  <span className="text-sm">Completion %</span>
-                </div>
-                <p className="text-2xl font-bold text-accent">{packer.completion_percentage}%</p>
-              </CardContent>
-            </Card>
-          </div>
-
-          <div className="grid grid-cols-2 gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Performance Metrics</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-muted-foreground">Performance Score</span>
-                    <span className="font-semibold text-foreground">{packer.performance_score}%</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-muted-foreground">Avg. Packing Time</span>
-                    <span className="font-semibold text-foreground">{packer.avg_packing_time} mins/order</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-muted-foreground">Zone</span>
-                    <Badge variant="outline">Promode Agro</Badge>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Sync Status</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-muted-foreground">Status</span>
-                    <Badge className={getSyncStatusColor(packer.sync_status)}>
-                      {getSyncStatusIcon(packer.sync_status)} {packer.sync_status}
-                    </Badge>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-muted-foreground">Last Active</span>
-                    <span className="text-sm text-foreground">
-                      {new Date(packer.last_active).toLocaleTimeString()}
-                    </span>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
       </Tabs>
+
+      {/* Action Buttons */}
+      <div className="flex justify-end gap-4 mt-6 p-6 bg-gray-50 rounded-lg">
+        {!isEditing ? (
+          <Button onClick={() => setIsEditing(true)} className="flex items-center gap-2">
+            <Edit className="h-4 w-4" />
+            Edit Packer Details
+          </Button>
+        ) : (
+          <>
+            <Button variant="outline" onClick={handleCancel} className="flex items-center gap-2">
+              <X className="h-4 w-4" />
+              Cancel
+            </Button>
+            <Button onClick={handleSave} className="flex items-center gap-2">
+              <Save className="h-4 w-4" />
+              Save Changes
+            </Button>
+          </>
+        )}
+      </div>
     </div>
   );
 }

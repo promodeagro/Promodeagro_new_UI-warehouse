@@ -150,6 +150,24 @@ export function Navigation() {
       }
     }
     
+    // Handle packer-orders routes - always show packer overview as active
+    if (location.pathname.startsWith('/order-management/packer-orders/')) {
+      if (href === '/order-management/packer-overview') {
+        return true;
+      }
+      // Don't show other items as active when on packer-orders
+      return false;
+    }
+    
+    // Handle packer-details routes - always show packer overview as active
+    if (location.pathname.startsWith('/order-management/packer-details/')) {
+      if (href === '/order-management/packer-overview') {
+        return true;
+      }
+      // Don't show other items as active when on packer-details
+      return false;
+    }
+    
     return false;
   };
 
@@ -171,6 +189,20 @@ export function Navigation() {
         
         // If came from orders details or no context, show orders details as active
         if (item.href === '/order-management/orders') {
+          return true;
+        }
+      }
+      
+      // Handle packer-orders routes - always show packer overview as active
+      if (location.pathname.startsWith('/order-management/packer-orders/')) {
+        if (item.href === '/order-management/packer-overview') {
+          return true;
+        }
+      }
+      
+      // Handle packer-details routes - always show packer overview as active
+      if (location.pathname.startsWith('/order-management/packer-details/')) {
+        if (item.href === '/order-management/packer-overview') {
           return true;
         }
       }

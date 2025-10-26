@@ -45,6 +45,7 @@ import {
   Award,
   Zap,
   MoreVertical,
+  Grid3X3,
   UserPlus,
   Ban,
   Smartphone,
@@ -367,6 +368,7 @@ export default function PackerOverview() {
   const enrichedOrders = useMemo(() => {
     // Use real orders from OrderContext, but add packing status if missing
     const base = orders || [];
+    
     return base.map(order => {
       // If order already has packing status, use it; otherwise assign default pending
       if (order.packing_status) {
@@ -397,6 +399,7 @@ export default function PackerOverview() {
     const workloads = packers.map(packer => {
       // Use the state management for active status
       const isActive = packerStates[packer.id] !== undefined ? packerStates[packer.id] : packer.active;
+      
       const assignedCount = enrichedOrders.filter(order => 
         order.assigned_packer_id === packer.id && order.packing_status === 'assigned'
       ).length;
@@ -432,15 +435,6 @@ export default function PackerOverview() {
         hasOutOfStockItems: outOfStockCount > 0
       };
     });
-    
-    // Debug logging for packer counts
-    console.log('📊 Packer counts updated:', workloads.map(w => ({
-      name: w.name,
-      assigned: w.assignedCount,
-      pending: w.pendingCount,
-      packed: w.packedCount,
-      completion: w.completionPercentage + '%'
-    })));
     
     return workloads;
   }, [enrichedOrders, packers, packerStates]);
@@ -612,33 +606,20 @@ export default function PackerOverview() {
       // Update last active time
       updatePackerLastActive(packerId);
       
-      // If packer is being deactivated, unassign all their orders
+      // Show status message
       if (!checked) {
-        const packerOrders = enrichedOrders.filter(order => order.assigned_packer_id === packerId);
-        packerOrders.forEach(order => {
-          updateOrder(order.id, {
-            assigned_packer_id: undefined,
-            assigned_packer_name: undefined,
-            packing_status: 'pending'
-          });
-        });
-        
-        if (packerOrders.length > 0) {
-          toast.warning(`Deactivated ${packer.name} - ${packerOrders.length} order(s) unassigned`);
-        }
-        
+        toast.success(`Packer ${packer.name} deactivated. Orders remain assigned for tracking.`);
         // Auto-switch to inactive tab if packer is deactivated
         if (packerActiveFilter === 'active') {
           setPackerActiveFilter('inactive');
         }
       } else {
+        toast.success(`Packer ${packer.name} activated.`);
         // Auto-switch to active tab if packer is activated
         if (packerActiveFilter === 'inactive') {
           setPackerActiveFilter('active');
         }
       }
-      
-      toast.success(`${packer.name} ${checked ? 'activated' : 'deactivated'}`);
     }
   };
 
@@ -688,6 +669,33 @@ export default function PackerOverview() {
       }
     }
   }, [enrichedOrders, packers]);
+
+  // Listen for localStorage changes to update packer data
+  useEffect(() => {
+    const handleStorageChange = () => {
+      const savedPackers = JSON.parse(localStorage.getItem('warehouse-packers') || '[]');
+      if (savedPackers.length > 0) {
+        // Update packerStates with saved data
+        const updatedStates: Record<string, boolean> = {};
+        savedPackers.forEach((p: any) => {
+          if (p.id && typeof p.is_active === 'boolean') {
+            updatedStates[p.id] = p.is_active;
+          }
+        });
+        setPackerStates(prev => ({ ...prev, ...updatedStates }));
+      }
+    };
+
+    // Listen for storage events
+    window.addEventListener('storage', handleStorageChange);
+    
+    // Also check on component mount
+    handleStorageChange();
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, []);
 
   // Selection handlers
   const handleSelectAll = (checked: boolean) => {
@@ -779,6 +787,33 @@ export default function PackerOverview() {
   const handleReassignOrder = (orderId: string) => {
     setOrderToReassign(orderId);
     setShowReassignDialog(true);
+  };
+
+  const handleStartOrder = (orderId: string) => {
+    const order = orders.find(o => o.id === orderId);
+    if (order) {
+      console.log('🚀 Starting order:', orderId);
+      updateOrderStatusCentralized(orderId, 'assigned');
+      toast.success(`Order ${order.order_number} started`);
+    }
+  };
+
+  const handleCompleteOrder = (orderId: string) => {
+    const order = orders.find(o => o.id === orderId);
+    if (order) {
+      console.log('✅ Completing order:', orderId);
+      updateOrderStatusCentralized(orderId, 'packed');
+      toast.success(`Order ${order.order_number} completed`);
+    }
+  };
+
+  const handleItemsNoStock = (orderId: string) => {
+    const order = orders.find(o => o.id === orderId);
+    if (order) {
+      console.log('🔴 Marking order as out of stock:', orderId);
+      updateOrderStatusCentralized(orderId, 'out_of_stock');
+      toast.error(`Order ${order.order_number} marked as Items No Stock`);
+    }
   };
 
   const handleConfirmReassignment = () => {
@@ -1399,12 +1434,13 @@ export default function PackerOverview() {
                       <TableHead>Pincode</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Sync</TableHead>
+                      <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {paginatedOrders.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={!autoAssign ? 10 : 9} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={!autoAssign ? 11 : 10} className="text-center py-8 text-muted-foreground">
                       No orders found
                     </TableCell>
                   </TableRow>
@@ -1484,6 +1520,60 @@ export default function PackerOverview() {
                           <span className="text-sm text-gray-700">Sync</span>
                         </div>
                       </TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        <div className="flex items-center gap-1">
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            className="h-7 px-2 text-xs"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleReassignOrder(order.id);
+                            }}
+                          >
+                            Reassign
+                          </Button>
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            className="h-7 px-2 text-xs"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleStartOrder(order.id);
+                            }}
+                          >
+                            <Grid3X3 className="h-3 w-3 mr-1" />
+                            Start
+                          </Button>
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            className="h-7 px-2 text-xs text-green-600 border-green-300 hover:bg-green-50"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCompleteOrder(order.id);
+                            }}
+                          >
+                            <Grid3X3 className="h-3 w-3 mr-1" />
+                            Complete
+                          </Button>
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            className="h-7 px-2 text-xs text-red-600 border-red-300 hover:bg-red-50"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleItemsNoStock(order.id);
+                            }}
+                          >
+                            <Grid3X3 className="h-3 w-3 mr-1" />
+                            Items No Stock
+                          </Button>
+                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+                            <MoreVertical className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
                     </TableRow>
                   ))
                 )}
@@ -1543,7 +1633,7 @@ export default function PackerOverview() {
       {/* Packer Overview cards */}
       <div className="grid grid-cols-3 gap-5">
         {paginatedPackers.map(p => {
-          const workload = packerWorkloads.find(w => w.id === p.id);
+          // p is already a workload object from packerWorkloads, no need to find it
           return (
           <Card key={p.id} className="w-[377px] h-[335px] flex-shrink-0 hover:shadow-lg transition-shadow">
             <CardContent className="p-6 space-y-4">
@@ -1580,15 +1670,15 @@ export default function PackerOverview() {
               {/* Status Boxes Section */}
               <div className="grid grid-cols-3 gap-3">
                 <div className="text-center p-3 rounded-lg bg-gray-100 border border-gray-200">
-                  <p className="text-2xl font-bold text-gray-800">{workload?.assignedCount || 0}</p>
+                  <p className="text-2xl font-bold text-gray-800">{p.assignedCount || 0}</p>
                   <p className="text-xs text-gray-600">Assigned</p>
                 </div>
                 <div className="text-center p-3 rounded-lg bg-orange-100 border border-orange-200">
-                  <p className="text-2xl font-bold text-orange-600">{workload?.pendingCount || 0}</p>
+                  <p className="text-2xl font-bold text-orange-600">{p.pendingCount || 0}</p>
                   <p className="text-xs text-orange-600">Pending</p>
                 </div>
                 <div className="text-center p-3 rounded-lg bg-green-100 border border-green-200">
-                  <p className="text-2xl font-bold text-green-600">{workload?.packedCount || 0}</p>
+                  <p className="text-2xl font-bold text-green-600">{p.packedCount || 0}</p>
                   <p className="text-xs text-green-600">Packed</p>
                 </div>
               </div>
@@ -1597,12 +1687,12 @@ export default function PackerOverview() {
               <div>
                 <div className="flex items-center justify-between text-xs mb-1">
                   <span className="text-muted-foreground">Completion</span>
-                  <span className="font-semibold text-foreground">{workload?.completionPercentage || 0}%</span>
+                  <span className="font-semibold text-foreground">{p.completionPercentage || 0}%</span>
                 </div>
                 <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
                   <div 
                     className="h-full bg-success rounded-full transition-all duration-500" 
-                    style={{ width: `${workload?.completionPercentage || 0}%` }} 
+                    style={{ width: `${p.completionPercentage || 0}%` }} 
                   />
                 </div>
               </div>

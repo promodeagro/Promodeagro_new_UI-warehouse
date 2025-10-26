@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Order, OrderItem, OrderStatus, PaymentMode, orders as dummyOrders } from '@/data/orderData';
+import { packers } from '@/data/packerData';
 import { useNotifications } from './NotificationContext';
 
 interface OrderContextType {
@@ -84,17 +85,37 @@ export const OrderProvider: React.FC<OrderProviderProps> = ({ children }) => {
       const now = new Date().toISOString();
       const orderNumber = `ORD-${Date.now()}`;
       
-      // Smart auto-assignment logic - assign to packer with least pending orders
-      const availablePackers = [
-        { id: 'PKR-001', name: 'Ravi Kumar' },
-        { id: 'PKR-002', name: 'Priya Sharma' },
-        { id: 'PKR-003', name: 'Amit Verma' },
-        { id: 'PKR-004', name: 'Sneha Gupta' },
-        { id: 'PKR-005', name: 'Rajesh Patel' }
-      ];
+      // Smart auto-assignment logic - assign to active packer with least pending orders
+      const activePackers = packers.filter(packer => packer.active);
       
-      // Count pending orders for each packer
-      const packerWorkloads = availablePackers.map(packer => {
+      if (activePackers.length === 0) {
+        console.log('⚠️ No active packers available for auto-assignment');
+        // No auto-assignment if no active packers
+        const shouldAutoAssign = false;
+        const selectedPacker = null;
+        
+        const enrichedOrderData = {
+          ...orderData,
+          id: orderId,
+          order_number: orderNumber,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          packing_status: 'pending', // No auto-assignment
+          assigned_packer_id: undefined,
+          assigned_packer_name: undefined,
+          status: 'Placed', // Stay as Placed
+        };
+        
+        const newOrder = enrichedOrderData as Order;
+        setOrders(prev => [...prev, newOrder]);
+        localStorage.setItem('warehouse-orders', JSON.stringify([...orders, newOrder]));
+        
+        console.log('Created new order without auto-assignment (no active packers):', newOrder);
+        return newOrder;
+      }
+      
+      // Count pending orders for each active packer
+      const packerWorkloads = activePackers.map(packer => {
         const pendingCount = orders.filter(order => 
           order.assigned_packer_id === packer.id && 
           (order.packing_status === 'pending' || order.packing_status === 'assigned')
