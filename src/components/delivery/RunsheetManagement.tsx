@@ -1,413 +1,320 @@
 import { useState } from "react";
-import { Truck, MapPin, Phone, Navigation, Clock, Package, Download, Plus, FileText, Calendar } from "lucide-react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
-import { useToast } from "@/hooks/use-toast";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import {
+  FileText,
+  Search,
+  Plus,
+  Package,
+  TrendingUp,
+  Filter,
+  Eye,
+  XCircle,
+  IndianRupee
+} from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { riderRunsheets, riderOrders } from "@/data/riderData";
+import CloseRunsheetDialog from "@/components/delivery/CloseRunsheetDialog";
 
-export function RunsheetManagement() {
-  const { toast } = useToast();
-  const [selectedOrder, setSelectedOrder] = useState<string | null>(null);
-  const [isCreateRunsheetOpen, setIsCreateRunsheetOpen] = useState(false);
-  const [runsheetForm, setRunsheetForm] = useState({
-    date: new Date().toISOString().split('T')[0],
-    driver: "",
-    vehicle: "",
-    route: "",
-    orders: [] as string[]
+const RunsheetManagement = () => {
+  const navigate = useNavigate();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [activeTab, setActiveTab] = useState<"active" | "pending" | "completed" | "closed">("active");
+  const [closeDialogOpen, setCloseDialogOpen] = useState(false);
+  const [selectedRunsheet, setSelectedRunsheet] = useState<{
+    id: string;
+    delivered: number;
+    total: number;
+    prepaid: number;
+    cod: number;
+  } | null>(null);
+  
+  const filteredRunsheets = riderRunsheets.filter(runsheet => {
+    const matchesSearch = runsheet.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      runsheet.rider_name.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    // Filter by tab
+    if (activeTab === "active") return matchesSearch && runsheet.status === "In Transit";
+    if (activeTab === "completed") return matchesSearch && runsheet.status === "Completed";
+    if (activeTab === "pending") return matchesSearch && runsheet.status === "Created";
+    if (activeTab === "closed") return matchesSearch && runsheet.status === "Completed";
+    
+    return matchesSearch;
   });
 
-  const deliveries = [
-    {
-      id: "ORD-001",
-      customer: "Rajesh Kumar",
-      address: "Flat 201, Green Valley Apartments, Gachibowli, Hyderabad - 500032",
-      phone: "+91 98765 43210",
-      items: [
-        { name: "Fresh Tomatoes", quantity: "2 kg", price: "₹90" },
-        { name: "Organic Spinach", quantity: "1 bunch", price: "₹35" },
-        { name: "Red Onions", quantity: "1 kg", price: "₹30" }
-      ],
-      totalAmount: "₹845",
-      paymentMode: "COD",
-      timeSlot: "2:00-3:00 PM",
-      priority: "High",
-      distance: "2.3 km",
-      status: "pending",
-      specialInstructions: "Call before reaching, Gate code: 1234"
-    },
-    {
-      id: "ORD-002",
-      customer: "Priya Sharma", 
-      address: "House No. 15, Road No. 36, Jubilee Hills, Hyderabad - 500033",
-      phone: "+91 87654 32109",
-      items: [
-        { name: "Fresh Bananas", quantity: "2 dozen", price: "₹120" },
-        { name: "Carrots", quantity: "1 kg", price: "₹40" },
-        { name: "Coriander", quantity: "2 bunches", price: "₹30" }
-      ],
-      totalAmount: "₹1,230",
-      paymentMode: "Online Paid",
-      timeSlot: "3:00-4:00 PM", 
-      priority: "Medium",
-      distance: "3.7 km",
-      status: "pending",
-      specialInstructions: "Leave at security if not available"
-    },
-    {
-      id: "ORD-003",
-      customer: "Amit Patel",
-      address: "B-302, Hitech City Towers, Madhapur, Hyderabad - 500081",
-      phone: "+91 76543 21098",
-      items: [
-        { name: "Cauliflower", quantity: "1 piece", price: "₹45" },
-        { name: "Green Peas", quantity: "500g", price: "₹80" }
-      ],
-      totalAmount: "₹520",
-      paymentMode: "COD",
-      timeSlot: "4:00-5:00 PM",
-      priority: "Low", 
-      distance: "1.8 km",
-      status: "pending",
-      specialInstructions: null
-    }
-  ];
-
-  const drivers = [
-    { id: "1", name: "Rajesh Kumar", vehicle: "DLV-001" },
-    { id: "2", name: "Priya Sharma", vehicle: "DLV-002" },
-    { id: "3", name: "Amit Patel", vehicle: "DLV-003" },
-    { id: "4", name: "Sunita Reddy", vehicle: "DLV-004" }
-  ];
-
-  const vehicles = [
-    { id: "DLV-001", make: "Tata Ace", capacity: "1.5 tonnes" },
-    { id: "DLV-002", make: "Mahindra Bolero", capacity: "2 tonnes" },
-    { id: "DLV-003", make: "Tata Ace", capacity: "1.5 tonnes" },
-    { id: "DLV-004", make: "Ashok Leyland Dost", capacity: "3 tonnes" }
-  ];
-
-  const handleCreateRunsheet = () => {
-    if (!runsheetForm.driver || !runsheetForm.vehicle || !runsheetForm.route) {
-      toast({
-        title: "Error",
-        description: "Please fill all required fields",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    toast({
-      title: "Success",
-      description: "Runsheet created successfully",
-    });
-
-    setRunsheetForm({
-      date: new Date().toISOString().split('T')[0],
-      driver: "",
-      vehicle: "",
-      route: "",
-      orders: []
-    });
-    setIsCreateRunsheetOpen(false);
-  };
-
-  const handleDownloadRunsheet = () => {
-    // Create runsheet content
-    const runsheetContent = `
-PROMODE AGRO FARMS - DELIVERY RUNSHEET
-======================================
-
-Date: ${new Date().toLocaleDateString()}
-Driver: ${runsheetForm.driver || "To be assigned"}
-Vehicle: ${runsheetForm.vehicle || "To be assigned"}
-Route: ${runsheetForm.route || "Standard Route"}
-
-DELIVERY ORDERS:
-================
-
-${deliveries.map((delivery, index) => `
-${index + 1}. Order ID: ${delivery.id}
-Customer: ${delivery.customer}
-Address: ${delivery.address}
-Phone: ${delivery.phone}
-Time Slot: ${delivery.timeSlot}
-Amount: ${delivery.totalAmount}
-Payment: ${delivery.paymentMode}
-Items:
-${delivery.items.map(item => `  - ${item.name} (${item.quantity}) - ${item.price}`).join('\n')}
-${delivery.specialInstructions ? `Special Instructions: ${delivery.specialInstructions}` : ''}
-${'='.repeat(50)}
-`).join('')}
-
-Total Orders: ${deliveries.length}
-Total Value: ₹${deliveries.reduce((sum, d) => sum + parseInt(d.totalAmount.replace('₹', '').replace(',', '')), 0).toLocaleString()}
-Total Distance: 7.8 km
-Estimated Duration: 1h 45m
-
-Driver Signature: ________________    Date: ________________
-    `;
-
-    // Create blob and download
-    const blob = new Blob([runsheetContent], { type: 'text/plain' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `runsheet-${new Date().toISOString().split('T')[0]}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
-
-    toast({
-      title: "Success",
-      description: "Runsheet downloaded successfully",
-    });
-  };
-
-  const getPriorityColor = (priority: string) => {
-    const colors = {
-      "High": "bg-red-500/10 text-red-500 border-red-200",
-      "Medium": "bg-yellow-500/10 text-yellow-500 border-yellow-200",
-      "Low": "bg-green-500/10 text-green-500 border-green-200"
-    };
-    return colors[priority as keyof typeof colors];
-  };
-
-  const getPaymentColor = (mode: string) => {
-    return mode === "COD" ? "bg-orange-500/10 text-orange-500" : "bg-green-500/10 text-green-500";
-  };
+  // Calculate totals based on assigned orders
+  const totalOrders = riderRunsheets.reduce((sum, r) => sum + r.orders_assigned.length, 0);
+  const allRunsheetOrders = riderRunsheets.flatMap(r => 
+    r.orders_assigned.map(orderId => riderOrders.find(o => o.id === orderId)).filter(Boolean)
+  );
+  const totalPrepaid = allRunsheetOrders
+    .filter(o => o?.payment_mode === 'Online')
+    .reduce((sum, o) => sum + (o?.total_amount || 0), 0);
+  const totalCOD = allRunsheetOrders
+    .filter(o => o?.payment_mode === 'COD')
+    .reduce((sum, o) => sum + (o?.total_amount || 0), 0);
 
   return (
-    <div className="space-y-6">
-      {/* Header with Actions */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-gradient-primary">Runsheet Management</h2>
-          <p className="text-muted-foreground">Create and manage delivery runsheets</p>
-        </div>
-        <div className="flex gap-2">
-          <Dialog open={isCreateRunsheetOpen} onOpenChange={setIsCreateRunsheetOpen}>
-            <DialogTrigger asChild>
-              <Button className="bg-gradient-primary hover:bg-gradient-primary/90">
+    <div className="min-h-screen bg-gradient-background">
+      <header className="bg-card border-b sticky top-0 z-10 shadow-sm">
+        <div className="container mx-auto px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-foreground font-display">Runsheet Management</h1>
+              <p className="text-sm text-muted-foreground">Create and manage delivery batches</p>
+            </div>
+            <Link to="/delivery/create-runsheet">
+              <Button className="hover:shadow-md">
                 <Plus className="h-4 w-4 mr-2" />
                 Create Runsheet
               </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-md">
-              <DialogHeader>
-                <DialogTitle>Create New Runsheet</DialogTitle>
-                <DialogDescription>
-                  Generate a new delivery runsheet for today
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4">
+            </Link>
+          </div>
+        </div>
+      </header>
+
+      <main className="container mx-auto px-6 py-8 space-y-6">
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <Card className="hover:shadow-lg transition-shadow">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
                 <div>
-                  <label className="text-sm font-medium mb-2 block">Delivery Date</label>
-                  <Input
-                    type="date"
-                    value={runsheetForm.date}
-                    onChange={(e) => setRunsheetForm({ ...runsheetForm, date: e.target.value })}
-                  />
+                  <p className="text-sm text-muted-foreground mb-1">Total Runsheets</p>
+                  <p className="text-3xl font-bold text-foreground">{riderRunsheets.length}</p>
                 </div>
-                <div>
-                  <label className="text-sm font-medium mb-2 block">Assign Driver</label>
-                  <Select value={runsheetForm.driver} onValueChange={(value) => setRunsheetForm({ ...runsheetForm, driver: value })}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select driver" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {drivers.map((driver) => (
-                        <SelectItem key={driver.id} value={driver.name}>
-                          {driver.name} ({driver.vehicle})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <label className="text-sm font-medium mb-2 block">Assign Vehicle</label>
-                  <Select value={runsheetForm.vehicle} onValueChange={(value) => setRunsheetForm({ ...runsheetForm, vehicle: value })}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select vehicle" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {vehicles.map((vehicle) => (
-                        <SelectItem key={vehicle.id} value={vehicle.id}>
-                          {vehicle.id} - {vehicle.make} ({vehicle.capacity})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <label className="text-sm font-medium mb-2 block">Route Name</label>
-                  <Input
-                    placeholder="e.g., Route A - Gachibowli"
-                    value={runsheetForm.route}
-                    onChange={(e) => setRunsheetForm({ ...runsheetForm, route: e.target.value })}
-                  />
+                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                  <FileText className="h-6 w-6 text-primary" />
                 </div>
               </div>
-              <div className="flex gap-2 pt-4">
-                <Button onClick={handleCreateRunsheet} className="flex-1">
-                  Create Runsheet
-                </Button>
-                <Button variant="outline" onClick={() => setIsCreateRunsheetOpen(false)}>
-                  Cancel
-                </Button>
+            </CardContent>
+          </Card>
+
+          <Card className="hover:shadow-lg transition-shadow">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground mb-1">Total Orders</p>
+                  <p className="text-3xl font-bold text-foreground">{totalOrders}</p>
+                </div>
+                <div className="w-12 h-12 rounded-full bg-accent/10 flex items-center justify-center">
+                  <Package className="h-6 w-6 text-accent" />
+                </div>
               </div>
-            </DialogContent>
-          </Dialog>
-          
-          <Button variant="outline" onClick={handleDownloadRunsheet}>
-            <Download className="h-4 w-4 mr-2" />
-            Download
+            </CardContent>
+          </Card>
+
+          <Card className="hover:shadow-lg transition-shadow">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground mb-1">Prepaid Total</p>
+                  <p className="text-2xl font-bold text-success">₹{totalPrepaid.toLocaleString()}</p>
+                </div>
+                <div className="w-12 h-12 rounded-full bg-success/10 flex items-center justify-center">
+                  <TrendingUp className="h-6 w-6 text-success" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="hover:shadow-lg transition-shadow">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground mb-1">COD Expected</p>
+                  <p className="text-2xl font-bold text-warning">₹{totalCOD.toLocaleString()}</p>
+                </div>
+                <div className="w-12 h-12 rounded-full bg-warning/10 flex items-center justify-center">
+                  <IndianRupee className="h-6 w-6 text-warning" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex gap-2 mb-6 flex-wrap">
+          <Button
+            variant={activeTab === "active" ? "default" : "outline"}
+            onClick={() => setActiveTab("active")}
+            className="gap-2 hover:border-primary/50"
+          >
+            🟢 Active Runsheets
+          </Button>
+          <Button
+            variant={activeTab === "pending" ? "default" : "outline"}
+            onClick={() => setActiveTab("pending")}
+            className="gap-2 hover:border-primary/50"
+          >
+            🟡 Pending Verification
+          </Button>
+          <Button
+            variant={activeTab === "completed" ? "default" : "outline"}
+            onClick={() => setActiveTab("completed")}
+            className="gap-2 hover:border-primary/50"
+          >
+            ✅ Completed Runsheets
+          </Button>
+          <Button
+            variant={activeTab === "closed" ? "default" : "outline"}
+            onClick={() => setActiveTab("closed")}
+            className="gap-2 hover:border-primary/50"
+          >
+            🔒 Closed Runsheets
           </Button>
         </div>
-      </div>
 
-      <Card className="glass-card">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <FileText className="h-5 w-5 text-primary" />
-            Today's Delivery Runsheet
-          </CardTitle>
-          <CardDescription>
-            Delivery schedule for {new Date().toLocaleDateString()}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {deliveries.map((delivery) => (
-              <Card 
-                key={delivery.id} 
-                className={`hover:shadow-md transition-all cursor-pointer ${
-                  selectedOrder === delivery.id ? 'ring-2 ring-primary' : ''
-                }`}
-                onClick={() => setSelectedOrder(selectedOrder === delivery.id ? null : delivery.id)}
-              >
-                <CardContent className="p-4">
-                  {/* Order Header */}
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline" className="font-mono text-xs">
-                        {delivery.id}
-                      </Badge>
-                      <Badge className={getPriorityColor(delivery.priority)}>
-                        {delivery.priority}
-                      </Badge>
-                      <Badge className={getPaymentColor(delivery.paymentMode)}>
-                        {delivery.paymentMode}
-                      </Badge>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-bold text-lg">{delivery.totalAmount}</div>
-                      <div className="text-sm text-muted-foreground">{delivery.distance}</div>
-                    </div>
-                  </div>
+        {/* Runsheets List */}
+        <Card className="hover:shadow-md transition-shadow">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="font-display">
+                {activeTab === "active" && "Active Runsheets"}
+                {activeTab === "pending" && "Pending Verification"}
+                {activeTab === "completed" && "Completed Runsheets"}
+                {activeTab === "closed" && "Closed Runsheets"}
+              </CardTitle>
+              <div className="flex gap-2">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search runsheets..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-10 w-64"
+                  />
+                </div>
+                <Button variant="outline" size="icon" className="hover:border-primary/50">
+                  <Filter className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {filteredRunsheets.length === 0 ? (
+              <div className="text-center py-12">
+                <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
+                <p className="text-muted-foreground">No runsheets found</p>
+              </div>
+            ) : (
+              filteredRunsheets.map((runsheet) => {
+                const runsheetOrders = runsheet.orders_assigned
+                  .map(orderId => riderOrders.find(o => o.id === orderId))
+                  .filter(Boolean);
+                const totalOrders = runsheetOrders.length;
+                const deliveredOrders = runsheetOrders.filter(o => o?.status === 'Delivered').length;
+                const progress = totalOrders > 0 ? (deliveredOrders / totalOrders) * 100 : 0;
+                const prepaidTotal = runsheetOrders.filter(o => o?.payment_mode === 'Online').reduce((sum, o) => sum + (o?.total_amount || 0), 0);
+                const codTotal = runsheetOrders.filter(o => o?.payment_mode === 'COD').reduce((sum, o) => sum + (o?.total_amount || 0), 0);
 
-                  {/* Customer Info */}
-                  <div className="space-y-2 mb-4">
-                    <h4 className="font-semibold text-lg">{delivery.customer}</h4>
-                    <div className="flex items-start gap-2 text-sm text-muted-foreground">
-                      <MapPin className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                      <span>{delivery.address}</span>
-                    </div>
-                    <div className="flex items-center gap-4 text-sm">
-                      <span className="flex items-center gap-1">
-                        <Clock className="h-4 w-4" />
-                        {delivery.timeSlot}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Package className="h-4 w-4" />
-                        {delivery.items.length} items
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Expanded Details */}
-                  {selectedOrder === delivery.id && (
-                    <div className="space-y-4 border-t pt-4">
-                      {/* Items List */}
-                      <div>
-                        <h5 className="font-medium mb-2">Order Items</h5>
-                        <div className="space-y-2">
-                          {delivery.items.map((item, index) => (
-                            <div key={index} className="flex items-center justify-between p-2 bg-muted/30 rounded">
-                              <div>
-                                <span className="font-medium">{item.name}</span>
-                                <span className="text-sm text-muted-foreground ml-2">({item.quantity})</span>
-                              </div>
-                              <span className="font-semibold">{item.price}</span>
-                            </div>
-                          ))}
+                return (
+                  <div key={runsheet.id} className="p-5 rounded-lg border bg-card hover:border-primary/50 transition-all hover:shadow-md">
+                    <div className="flex items-start justify-between gap-6 flex-wrap">
+                      {/* Left: Runsheet ID & Status */}
+                      <div className="flex items-start gap-3">
+                        <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                          <FileText className="h-6 w-6 text-primary" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 mb-1">
+                            <h3 className="text-lg font-semibold text-foreground">{runsheet.id}</h3>
+                            <Badge variant={runsheet.status === 'In Transit' ? 'default' : 'outline'}>
+                              {runsheet.status}
+                            </Badge>
+                          </div>
+                          <p className="text-sm text-muted-foreground">
+                            Date: {runsheet.run_date}
+                          </p>
                         </div>
                       </div>
 
-                      {/* Special Instructions */}
-                      {delivery.specialInstructions && (
-                        <div>
-                          <h5 className="font-medium mb-2">Special Instructions</h5>
-                          <div className="p-3 bg-blue-50 dark:bg-blue-950/30 rounded border-l-4 border-blue-500">
-                            <p className="text-sm">{delivery.specialInstructions}</p>
+                      {/* Middle: Rider Info */}
+                      <div className="flex-1 min-w-[150px]">
+                        <p className="text-xs text-muted-foreground mb-1">Assigned Rider</p>
+                        <p className="font-semibold text-foreground mb-1">{runsheet.rider_name}</p>
+                        <p className="text-sm text-muted-foreground">{runsheet.rider_id}</p>
+                        <p className="text-sm text-muted-foreground">Zone: {runsheet.route_zone}</p>
+                      </div>
+
+                      {/* Progress */}
+                      <div className="flex-1 min-w-[150px]">
+                        <p className="text-xs text-muted-foreground mb-2">Order Progress</p>
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-muted-foreground">Delivered: {deliveredOrders}/{totalOrders}</span>
+                            <span className="font-medium text-foreground">{Math.round(progress)}%</span>
                           </div>
+                          <Progress value={progress} className="h-2" />
                         </div>
-                      )}
+                      </div>
+
+                      {/* Financial */}
+                      <div className="text-right min-w-[120px]">
+                        <p className="text-xs text-muted-foreground mb-1">Prepaid:</p>
+                        <p className="text-lg font-bold text-success mb-2">₹{prepaidTotal.toLocaleString()}</p>
+                        <p className="text-xs text-muted-foreground mb-1">COD:</p>
+                        <p className="text-lg font-bold text-warning">₹{codTotal.toLocaleString()}</p>
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex flex-col gap-2 min-w-[120px]">
+                        <Button 
+                          size="sm" 
+                          variant="outline" 
+                          className="w-full gap-2 hover:border-primary/50"
+                          onClick={() => navigate(`/delivery/runsheets/${runsheet.id}`)}
+                        >
+                          <Eye className="h-3 w-3" />
+                          View Details
+                        </Button>
+                        <Button 
+                          size="sm" 
+                          variant="default" 
+                          className="gap-2 hover:shadow-md"
+                          onClick={() => {
+                            setSelectedRunsheet({
+                              id: runsheet.id,
+                              delivered: deliveredOrders,
+                              total: totalOrders,
+                              prepaid: prepaidTotal,
+                              cod: codTotal
+                            });
+                            setCloseDialogOpen(true);
+                          }}
+                        >
+                          <XCircle className="h-3 w-3" />
+                          Close Runsheet
+                        </Button>
+                      </div>
                     </div>
-                  )}
-
-                  {/* Action Buttons */}
-                  <div className="flex items-center gap-2 mt-4">
-                    <Button variant="outline" size="sm" className="flex items-center gap-1">
-                      <Phone className="h-4 w-4" />
-                      <span className="hidden sm:inline">Call Customer</span>
-                    </Button>
-                    <Button variant="outline" size="sm" className="flex items-center gap-1">
-                      <Navigation className="h-4 w-4" />
-                      <span className="hidden sm:inline">Navigate</span>
-                    </Button>
-                    <Button size="sm" className="bg-gradient-primary hover:bg-gradient-primary/90 flex-1 sm:flex-none">
-                      Start Delivery
-                    </Button>
                   </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Route Optimization */}
-      <Card className="glass-card">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Navigation className="h-5 w-5 text-accent" />
-            Route Optimization
-          </CardTitle>
-          <CardDescription>Optimized delivery sequence for efficiency</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 md:grid-cols-3">
-            <div className="text-center">
-              <div className="text-2xl font-bold text-primary">7.8 km</div>
-              <p className="text-sm text-muted-foreground">Total Distance</p>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-accent">1h 45m</div>
-              <p className="text-sm text-muted-foreground">Est. Duration</p>
-            </div>
-            <div className="text-center">  
-              <div className="text-2xl font-bold text-secondary">₹2,595</div>
-              <p className="text-sm text-muted-foreground">Total Value</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+                );
+              })
+            )}
+          </CardContent>
+        </Card>
+      </main>
+      {selectedRunsheet && (
+        <CloseRunsheetDialog
+          open={closeDialogOpen}
+          onOpenChange={setCloseDialogOpen}
+          runsheetId={selectedRunsheet.id}
+          delivered={selectedRunsheet.delivered}
+          total={selectedRunsheet.total}
+          expectedCOD={selectedRunsheet.cod}
+          prepaidTotal={selectedRunsheet.prepaid}
+          onConfirm={() => {
+            // Simulate closure; in real app call API and refresh list
+            setCloseDialogOpen(false);
+          }}
+        />
+      )}
     </div>
   );
-}
+};
+
+export default RunsheetManagement;

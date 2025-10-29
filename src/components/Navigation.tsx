@@ -67,7 +67,13 @@ const navigationItems = [
     items: [
       { title: 'Orders', href: '/delivery/orders', icon: ClipboardList },
       { title: 'History', href: '/delivery/history', icon: BarChart3 },
-      { title: 'Runsheets', href: '/delivery/runsheets', icon: ClipboardList }
+      { title: 'Runsheet Management', href: '/delivery/runsheets', icon: ClipboardList },
+      { title: 'Analytics', href: '/delivery/analytics', icon: BarChart3 },
+      { title: 'Rider Portal', href: '/delivery/rider-portal', icon: Users },
+      { title: 'Rider Management', href: '/delivery/rider-management', icon: Users },
+      { title: 'Rider Overview', href: '/delivery/rider-overview', icon: TrendingUp },
+      { title: 'Cash Collection', href: '/delivery/cash-collection', icon: CreditCard },
+      { title: 'Rider Onboarding', href: '/delivery/rider-onboarding-queue', icon: Users }
     ]
   },
   {
