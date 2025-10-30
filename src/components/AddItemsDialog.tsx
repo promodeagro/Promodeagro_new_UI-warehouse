@@ -12,6 +12,7 @@ interface Item {
   category: string;
   subCategory: string;
   unit: string;
+  purchasingPrice: number;
   sellingPrice: number;
   imageUrl: string;
 }
@@ -25,15 +26,15 @@ interface AddItemsDialogProps {
 
 // Mock items data
 const mockItems: Item[] = [
-  { id: "1", name: "Tomato", category: "Vegetable", subCategory: "Fresh Vegetables", unit: "kg", sellingPrice: 40, imageUrl: "🍅" },
-  { id: "2", name: "Carrot", category: "Vegetable", subCategory: "Fresh Vegetables", unit: "kg", sellingPrice: 50, imageUrl: "🥕" },
-  { id: "3", name: "Ghee", category: "Dairy", subCategory: "Milk Products", unit: "box", sellingPrice: 500, imageUrl: "🧈" },
-  { id: "4", name: "Butter", category: "Dairy", subCategory: "Milk Products", unit: "box", sellingPrice: 300, imageUrl: "🧈" },
-  { id: "5", name: "Cucumber", category: "Vegetable", subCategory: "Fresh Vegetables", unit: "kg", sellingPrice: 30, imageUrl: "🥒" },
-  { id: "6", name: "Lemon", category: "Vegetable", subCategory: "Fresh Vegetables", unit: "kg", sellingPrice: 80, imageUrl: "🍋" },
-  { id: "7", name: "Green Chilli", category: "Vegetable", subCategory: "Fresh Vegetables", unit: "kg", sellingPrice: 100, imageUrl: "🌶️" },
-  { id: "8", name: "Watermelon", category: "Fruit", subCategory: "Fresh Fruits", unit: "kg", sellingPrice: 40, imageUrl: "🍉" },
-  { id: "9", name: "Apple", category: "Fruit", subCategory: "Fresh Fruits", unit: "pcs", sellingPrice: 150, imageUrl: "🍎" },
+  { id: "1", name: "Tomato", category: "Vegetable", subCategory: "Fresh Vegetables", unit: "kg", purchasingPrice: 35, sellingPrice: 40, imageUrl: "🍅" },
+  { id: "2", name: "Carrot", category: "Vegetable", subCategory: "Fresh Vegetables", unit: "kg", purchasingPrice: 42, sellingPrice: 50, imageUrl: "🥕" },
+  { id: "3", name: "Ghee", category: "Dairy", subCategory: "Milk Products", unit: "box", purchasingPrice: 450, sellingPrice: 500, imageUrl: "🧈" },
+  { id: "4", name: "Butter", category: "Dairy", subCategory: "Milk Products", unit: "box", purchasingPrice: 260, sellingPrice: 300, imageUrl: "🧈" },
+  { id: "5", name: "Cucumber", category: "Vegetable", subCategory: "Fresh Vegetables", unit: "kg", purchasingPrice: 24, sellingPrice: 30, imageUrl: "🥒" },
+  { id: "6", name: "Lemon", category: "Vegetable", subCategory: "Fresh Vegetables", unit: "kg", purchasingPrice: 70, sellingPrice: 80, imageUrl: "🍋" },
+  { id: "7", name: "Green Chilli", category: "Vegetable", subCategory: "Fresh Vegetables", unit: "kg", purchasingPrice: 90, sellingPrice: 100, imageUrl: "🌶️" },
+  { id: "8", name: "Watermelon", category: "Fruit", subCategory: "Fresh Fruits", unit: "kg", purchasingPrice: 32, sellingPrice: 40, imageUrl: "🍉" },
+  { id: "9", name: "Apple", category: "Fruit", subCategory: "Fresh Fruits", unit: "pcs", purchasingPrice: 120, sellingPrice: 150, imageUrl: "🍎" },
 ];
 
 const categories = ["All", "Vegetable", "Dairy", "Fruit"];
@@ -150,6 +151,7 @@ export default function AddItemsDialog({ open, onOpenChange, onAddItems, selecte
                     <th className="text-left p-3 font-medium">Category</th>
                     <th className="text-left p-3 font-medium">Sub Category</th>
                     <th className="text-left p-3 font-medium">Unit</th>
+                    <th className="text-left p-3 font-medium">Purchasing Price</th>
                     <th className="text-left p-3 font-medium">Selling Price</th>
                   </tr>
                 </thead>
@@ -176,6 +178,7 @@ export default function AddItemsDialog({ open, onOpenChange, onAddItems, selecte
                       <td className="p-3">{item.category}</td>
                       <td className="p-3">{item.subCategory}</td>
                       <td className="p-3">{item.unit}</td>
+                      <td className="p-3">₹{item.purchasingPrice}</td>
                       <td className="p-3">₹{item.sellingPrice}</td>
                     </tr>
                   ))}

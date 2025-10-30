@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Trash2, Upload, X } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Upload, X } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/hooks/use-toast";
 import { getPaymentMethodAccounts } from "@/lib/accounts";
+import AddItemsDialog from "@/components/AddItemsDialog";
 
 interface PurchaseItem {
   id: string;
@@ -19,7 +20,8 @@ interface PurchaseItem {
   subCategory: string;
   unit: string;
   quantity: number;
-  rate: number;
+  rate: number; // Purchasing price
+  sellingPrice?: number;
   amount: number;
 }
 
@@ -109,7 +111,15 @@ const mockPurchaseOrders = [
 
 export default function NewPurchaseOrder() {
   const navigate = useNavigate();
-  const [selectedPO, setSelectedPO] = useState("");
+  // Invoice number (PUR-00001 style), read-only
+  const nextInvoiceNumber = useMemo(() => {
+    const key = "purchaseInvoiceCounter";
+    const curr = Number(localStorage.getItem(key) || "0");
+    // Note: we only preview here; actual increment occurs on submit
+    const next = curr + 1;
+    return `PUR-${String(next).padStart(5, "0")}`;
+  }, []);
+
   const [vendorName, setVendorName] = useState("");
   const [orderDate, setOrderDate] = useState(new Date().toISOString().split('T')[0]);
   const [dueDate, setDueDate] = useState("");
@@ -119,28 +129,28 @@ export default function NewPurchaseOrder() {
   const [uploadedImages, setUploadedImages] = useState<File[]>([]);
   const [notes, setNotes] = useState("");
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
+  const [showAddItemsDialog, setShowAddItemsDialog] = useState(false);
+  const [hambaliCharges, setHambaliCharges] = useState<number>(0);
+  const handleAddItems = (selected: any[]) => {
+    const newItems = selected.map((item: any) => ({
+      id: item.id,
+      name: item.name,
+      image: item.imageUrl,
+      imageUrl: item.imageUrl,
+      category: item.category,
+      subCategory: item.subCategory || "",
+      unit: item.unit,
+      quantity: 1,
+      rate: item.purchasingPrice,
+      sellingPrice: item.sellingPrice,
+      amount: 1 * item.purchasingPrice,
+    }));
 
-  const handlePOSelection = (poId: string) => {
-    setSelectedPO(poId);
-    const po = mockPurchaseOrders.find(p => p.id === poId);
-    if (po) {
-      setVendorName(po.vendor);
-      setOrderDate(po.orderDate);
-      const mappedItems = po.items.map(item => ({
-        id: item.id.toString(),
-        name: item.name,
-        image: item.image,
-        imageUrl: item.image,
-        category: item.category,
-        subCategory: item.subCategory || "",
-        unit: item.unit,
-        quantity: item.quantity,
-        rate: item.rate,
-        amount: item.quantity * item.rate
-      }));
-      setItems(mappedItems);
-      setSelectedItemIds(new Set(po.items.map(item => item.id.toString())));
-    }
+    const existingIds = new Set(items.map(i => i.id));
+    const uniqueToAdd = newItems.filter(i => !existingIds.has(i.id));
+    const updated = [...items, ...uniqueToAdd];
+    setItems(updated);
+    setSelectedItemIds(new Set(updated.map(i => i.id)));
   };
 
   const handlePaymentStatusChange = (status: string) => {
@@ -185,7 +195,8 @@ export default function NewPurchaseOrder() {
     setUploadedImages(prev => prev.filter((_, i) => i !== index));
   };
 
-  const totalAmount = items.reduce((sum, item) => sum + item.amount, 0);
+  const subTotal = items.reduce((sum, item) => sum + item.amount, 0);
+  const totalAmount = subTotal + (hambaliCharges || 0);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -210,13 +221,16 @@ export default function NewPurchaseOrder() {
     }
 
     try {
-      // Generate unique ID
+      // Generate unique IDs and persist invoice counter
       const id = `PO-${Date.now()}`;
+      const key = "purchaseInvoiceCounter";
+      const curr = Number(localStorage.getItem(key) || "0");
+      localStorage.setItem(key, String(curr + 1));
       
       // Create purchase order
       const newPurchase = {
         id,
-        poId: selectedPO || `PO-${Date.now()}`,
+        poId: nextInvoiceNumber,
         vendor: vendorName,
         date: orderDate,
         dueDate,
@@ -224,10 +238,11 @@ export default function NewPurchaseOrder() {
         paymentMode: getPaymentMethodAccounts().find(acc => acc.code === paymentAccount)?.name || "",
         paymentAccount,
         itemsCount: items.length,
-        subtotal: totalAmount, // Since we removed discount, subtotal = totalAmount
+        subtotal: subTotal,
         discountPercentage: 0,
         discountAmount: 0,
         totalAmount,
+        hambaliCharges,
         items,
         notes,
         uploadedImages: uploadedImages.map(file => ({
@@ -306,17 +321,8 @@ export default function NewPurchaseOrder() {
           <CardContent className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-2">
-                <Label htmlFor="poId">Purchase Order ID</Label>
-                <Select value={selectedPO} onValueChange={handlePOSelection}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select PO ID" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {mockPurchaseOrders.map(po => (
-                      <SelectItem key={po.id} value={po.id}>{po.id}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label htmlFor="invoiceNo">Purchase Invoice No</Label>
+                <Input id="invoiceNo" value={nextInvoiceNumber} disabled />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="vendor">Vendor Name</Label>
@@ -325,7 +331,6 @@ export default function NewPurchaseOrder() {
                   value={vendorName}
                   onChange={(e) => setVendorName(e.target.value)}
                   placeholder="Vendor name" 
-                  disabled={!!selectedPO}
                   required 
                 />
               </div>
@@ -336,7 +341,6 @@ export default function NewPurchaseOrder() {
                   type="date" 
                   value={orderDate}
                   onChange={(e) => setOrderDate(e.target.value)}
-                  disabled={!!selectedPO}
                   required 
                 />
               </div>
@@ -379,7 +383,12 @@ export default function NewPurchaseOrder() {
             </div>
 
             <div className="space-y-4">
-              <Label>Purchase Items</Label>
+              <div className="flex items-center justify-between">
+                <Label>Purchase Items</Label>
+                <Button type="button" className="gap-2" onClick={() => setShowAddItemsDialog(true)}>
+                  <Plus className="h-4 w-4" /> Add Item
+                </Button>
+              </div>
 
               {items.length > 0 ? (
                 <div className="border rounded-lg overflow-hidden">
@@ -387,8 +396,10 @@ export default function NewPurchaseOrder() {
                     <thead className="bg-muted">
                       <tr>
                         <th className="text-left p-3 font-medium">Item Name</th>
-                        <th className="text-left p-3 font-medium w-32">Quantity</th>
-                        <th className="text-left p-3 font-medium w-32">Rate</th>
+                        <th className="text-left p-3 font-medium w-24">Unit</th>
+                        <th className="text-left p-3 font-medium w-32">Purchase Qty</th>
+                        <th className="text-left p-3 font-medium w-32">Purchasing Price</th>
+                        <th className="text-left p-3 font-medium w-32">Selling Price</th>
                         <th className="text-left p-3 font-medium w-32">Amount</th>
                         <th className="w-12"></th>
                       </tr>
@@ -402,6 +413,7 @@ export default function NewPurchaseOrder() {
                               <span className="font-medium">{item.name}</span>
                             </div>
                           </td>
+                          <td className="p-3">{item.unit}</td>
                           <td className="p-3">
                             <Input
                               type="number"
@@ -416,6 +428,16 @@ export default function NewPurchaseOrder() {
                               type="number"
                               value={item.rate}
                               onChange={(e) => updateItem(index, "rate", parseFloat(e.target.value) || 0)}
+                              min="0"
+                              step="0.01"
+                              className="w-24"
+                            />
+                          </td>
+                          <td className="p-3">
+                            <Input
+                              type="number"
+                              value={item.sellingPrice ?? 0}
+                              onChange={(e) => updateItem(index, "sellingPrice", parseFloat(e.target.value) || 0)}
                               min="0"
                               step="0.01"
                               className="w-24"
@@ -439,7 +461,26 @@ export default function NewPurchaseOrder() {
                     </tbody>
                     <tfoot className="bg-muted font-semibold">
                       <tr className="border-t">
-                        <td colSpan={3} className="p-3 text-right font-bold">Total:</td>
+                        <td colSpan={5} className="p-3 text-right font-bold">Subtotal:</td>
+                        <td className="p-3 font-bold">₹{subTotal.toFixed(2)}</td>
+                        <td></td>
+                      </tr>
+                      <tr>
+                        <td colSpan={5} className="p-3 text-right font-bold">Hambali charges:</td>
+                        <td className="p-3">
+                          <Input
+                            type="number"
+                            value={hambaliCharges}
+                            onChange={(e) => setHambaliCharges(parseFloat(e.target.value) || 0)}
+                            min="0"
+                            step="0.01"
+                            className="w-32"
+                          />
+                        </td>
+                        <td></td>
+                      </tr>
+                      <tr>
+                        <td colSpan={5} className="p-3 text-right font-bold">Total:</td>
                         <td className="p-3 font-bold">₹{totalAmount.toFixed(2)}</td>
                         <td></td>
                       </tr>
@@ -448,10 +489,7 @@ export default function NewPurchaseOrder() {
                 </div>
               ) : (
                 <div className="border rounded-lg p-8 text-center text-muted-foreground">
-                  {selectedPO 
-                    ? "No items in this purchase order." 
-                    : "No items added. Select a PO ID to load items."
-                  }
+                  No items added. Click "Add Item" to add items to the invoice.
                 </div>
               )}
             </div>
@@ -534,6 +572,13 @@ export default function NewPurchaseOrder() {
           </CardContent>
         </Card>
       </form>
+
+      <AddItemsDialog
+        open={showAddItemsDialog}
+        onOpenChange={setShowAddItemsDialog}
+        onAddItems={handleAddItems}
+        selectedItems={selectedItemIds}
+      />
 
     </div>
   );
