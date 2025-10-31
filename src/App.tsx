@@ -18,6 +18,7 @@ import { StockReceiving } from '@/components/inventory/StockReceiving';
 import { QualityCheck } from '@/components/inventory/QualityCheck';
 import { ProductCategoryManagement } from '@/components/inventory/ProductCategoryManagement';
 import { QuickActions } from '@/components/inventory/QuickActions';
+<<<<<<< HEAD
 import UnitManagement from '@/components/inventory/UnitManagement';
 import { OrderDelivery } from '@/components/delivery/OrderDelivery';
 import { DeliveryHistory } from '@/components/delivery/DeliveryHistory';
@@ -36,6 +37,8 @@ import RiderOnboardingReview from '@/components/delivery/RiderOnboardingReview';
 import RiderRunsheets from '@/components/delivery/RiderRunsheets';
 import RunsheetDetails from '@/components/delivery/RunsheetDetails';
 import CreateRunsheet from '@/components/delivery/CreateRunsheet';
+=======
+>>>>>>> 1cf58843 (Rider module changes are working)
 import { FleetManagement } from '@/components/logistics/FleetManagement';
 import { RouteOptimization } from '@/components/logistics/RouteOptimization';
 import { DeliveryTracking } from '@/components/logistics/DeliveryTracking';
@@ -90,6 +93,20 @@ import NewJournalEntry from '@/components/accounts/journal-entries/NewJournalEnt
 import EditJournalEntry from '@/components/accounts/journal-entries/EditJournalEntry';
 import ViewJournalEntry from '@/components/accounts/journal-entries/ViewJournalEntry';
 import ReportDetail from '@/components/accounts/reports/ReportDetail';
+
+// Delivery components
+import RunsheetManagement from '@/components/delivery/RunsheetManagement';
+import RiderManagementDashboard from '@/components/delivery/RiderManagementDashboard';
+import RiderOverview from '@/components/delivery/RiderOverview';
+import CashCollectionManagement from '@/components/delivery/CashCollectionManagement';
+import RiderRunsheets from '@/components/delivery/RiderRunsheets';
+import RunsheetDetails from '@/components/delivery/RunsheetDetails';
+import CreateRunsheet from '@/components/delivery/CreateRunsheet';
+import DeliveryAction from '@/components/delivery/DeliveryAction';
+import CashVerificationDetails from '@/components/delivery/CashVerificationDetails';
+import CollectionDetailsView from '@/components/delivery/CollectionDetailsView';
+import CloseRunsheet from '@/components/delivery/CloseRunsheet';
+import RiderOnboardingQueue from '@/components/delivery/RiderOnboardingQueue';
 
 // Create a query client
 const queryClient = new QueryClient({
@@ -147,23 +164,18 @@ function App() {
                   <Route path="/pincodes" element={<PincodeManagement />} />
                   
                   {/* Delivery Management */}
-                  <Route path="/delivery/orders" element={<OrderDelivery />} />
-                  <Route path="/delivery/history" element={<DeliveryHistory />} />
-                  <Route path="/delivery/runsheets" element={<RunsheetManagement />} />
-                  <Route path="/delivery/analytics" element={<DeliveryAnalytics />} />
-                  <Route path="/delivery/rider-portal" element={<RiderPortal />} />
                   <Route path="/delivery/rider-management" element={<RiderManagementDashboard />} />
-                  <Route path="/delivery/rider-overview" element={<EnhancedRiderOverview />} />
+                  <Route path="/delivery/rider-overview" element={<RiderOverview />} />
+                  <Route path="/delivery/runsheets" element={<RunsheetManagement />} />
+                  <Route path="/delivery/runsheets/:id" element={<RunsheetDetails />} />
+                  <Route path="/delivery/create-runsheet" element={<CreateRunsheet />} />
+                  <Route path="/delivery/rider-onboarding-queue" element={<RiderOnboardingQueue />} />
                   <Route path="/delivery/cash-collection" element={<CashCollectionManagement />} />
                   <Route path="/delivery/cash-verification/:id" element={<CashVerificationDetails />} />
                   <Route path="/delivery/collection-details/:id" element={<CollectionDetailsView />} />
+                  <Route path="/delivery/close-runsheet/:runsheetId" element={<CloseRunsheet />} />
                   <Route path="/delivery/rider/delivery/:id" element={<DeliveryAction />} />
-                  <Route path="/delivery/rider-onboarding-queue" element={<RiderOnboardingQueue />} />
-                  <Route path="/delivery/rider-onboarding" element={<RiderOnboarding />} />
-                  <Route path="/delivery/rider-onboarding-review" element={<RiderOnboardingReview />} />
                   <Route path="/delivery/rider-runsheets/:riderId" element={<RiderRunsheets />} />
-                  <Route path="/delivery/runsheets/:id" element={<RunsheetDetails />} />
-                  <Route path="/delivery/create-runsheet" element={<CreateRunsheet />} />
                   
                   {/* Logistics */}
                   <Route path="/logistics/fleet" element={<FleetManagement />} />

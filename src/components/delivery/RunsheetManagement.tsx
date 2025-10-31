@@ -9,34 +9,23 @@ import {
   Search,
   Plus,
   Package,
+  IndianRupee,
   TrendingUp,
   Filter,
   Eye,
-  XCircle,
-  IndianRupee
+  XCircle
 } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
-import { riderRunsheets, riderOrders } from "@/data/riderData";
-import CloseRunsheetDialog from "@/components/delivery/CloseRunsheetDialog";
+import { Link } from "react-router-dom";
+import { runsheets, orders } from "@/data/dummyData";
 
 const RunsheetManagement = () => {
-  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeTab, setActiveTab] = useState<"active" | "pending" | "completed" | "closed">("active");
-  const [closeDialogOpen, setCloseDialogOpen] = useState(false);
-  const [selectedRunsheet, setSelectedRunsheet] = useState<{
-    id: string;
-    delivered: number;
-    total: number;
-    prepaid: number;
-    cod: number;
-  } | null>(null);
+  const [activeTab, setActiveTab] = useState<"active" | "pending" | "invalid" | "cash-pending" | "completed" | "closed">("active");
   
-  const filteredRunsheets = riderRunsheets.filter(runsheet => {
+  const filteredRunsheets = runsheets.filter(runsheet => {
     const matchesSearch = runsheet.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
       runsheet.rider_name.toLowerCase().includes(searchQuery.toLowerCase());
     
-    // Filter by tab
     if (activeTab === "active") return matchesSearch && runsheet.status === "In Transit";
     if (activeTab === "completed") return matchesSearch && runsheet.status === "Completed";
     if (activeTab === "pending") return matchesSearch && runsheet.status === "Created";
@@ -45,10 +34,9 @@ const RunsheetManagement = () => {
     return matchesSearch;
   });
 
-  // Calculate totals based on assigned orders
-  const totalOrders = riderRunsheets.reduce((sum, r) => sum + r.orders_assigned.length, 0);
-  const allRunsheetOrders = riderRunsheets.flatMap(r => 
-    r.orders_assigned.map(orderId => riderOrders.find(o => o.id === orderId)).filter(Boolean)
+  const totalOrders = runsheets.reduce((sum, r) => sum + r.orders_assigned.length, 0);
+  const allRunsheetOrders = runsheets.flatMap(r => 
+    r.orders_assigned.map(orderId => orders.find(o => o.id === orderId)).filter(Boolean)
   );
   const totalPrepaid = allRunsheetOrders
     .filter(o => o?.payment_mode === 'Online')
@@ -58,16 +46,16 @@ const RunsheetManagement = () => {
     .reduce((sum, o) => sum + (o?.total_amount || 0), 0);
 
   return (
-    <div className="min-h-screen bg-gradient-background">
+    <div className="min-h-screen bg-muted/30">
       <header className="bg-card border-b sticky top-0 z-10 shadow-sm">
         <div className="container mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-foreground font-display">Runsheet Management</h1>
+              <h1 className="text-2xl font-bold text-foreground">Runsheet Management</h1>
               <p className="text-sm text-muted-foreground">Create and manage delivery batches</p>
             </div>
             <Link to="/delivery/create-runsheet">
-              <Button className="hover:shadow-md">
+              <Button>
                 <Plus className="h-4 w-4 mr-2" />
                 Create Runsheet
               </Button>
@@ -79,12 +67,12 @@ const RunsheetManagement = () => {
       <main className="container mx-auto px-6 py-8 space-y-6">
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card className="hover:shadow-lg transition-shadow">
+          <Card>
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground mb-1">Total Runsheets</p>
-                  <p className="text-3xl font-bold text-foreground">{riderRunsheets.length}</p>
+                  <p className="text-3xl font-bold text-foreground">{runsheets.length}</p>
                 </div>
                 <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
                   <FileText className="h-6 w-6 text-primary" />
@@ -93,7 +81,7 @@ const RunsheetManagement = () => {
             </CardContent>
           </Card>
 
-          <Card className="hover:shadow-lg transition-shadow">
+          <Card>
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
@@ -107,7 +95,7 @@ const RunsheetManagement = () => {
             </CardContent>
           </Card>
 
-          <Card className="hover:shadow-lg transition-shadow">
+          <Card>
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
@@ -121,7 +109,7 @@ const RunsheetManagement = () => {
             </CardContent>
           </Card>
 
-          <Card className="hover:shadow-lg transition-shadow">
+          <Card>
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
@@ -137,42 +125,42 @@ const RunsheetManagement = () => {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-2 mb-6 flex-wrap">
+        <div className="flex gap-2 mb-6">
           <Button
             variant={activeTab === "active" ? "default" : "outline"}
             onClick={() => setActiveTab("active")}
-            className="gap-2 hover:border-primary/50"
+            className="gap-2"
           >
             🟢 Active Runsheets
           </Button>
           <Button
             variant={activeTab === "pending" ? "default" : "outline"}
             onClick={() => setActiveTab("pending")}
-            className="gap-2 hover:border-primary/50"
+            className="gap-2"
           >
             🟡 Pending Verification
           </Button>
           <Button
             variant={activeTab === "completed" ? "default" : "outline"}
             onClick={() => setActiveTab("completed")}
-            className="gap-2 hover:border-primary/50"
+            className="gap-2"
           >
             ✅ Completed Runsheets
           </Button>
           <Button
             variant={activeTab === "closed" ? "default" : "outline"}
             onClick={() => setActiveTab("closed")}
-            className="gap-2 hover:border-primary/50"
+            className="gap-2"
           >
             🔒 Closed Runsheets
           </Button>
         </div>
 
         {/* Runsheets List */}
-        <Card className="hover:shadow-md transition-shadow">
+        <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle className="font-display">
+              <CardTitle>
                 {activeTab === "active" && "Active Runsheets"}
                 {activeTab === "pending" && "Pending Verification"}
                 {activeTab === "completed" && "Completed Runsheets"}
@@ -188,7 +176,7 @@ const RunsheetManagement = () => {
                     className="pl-10 w-64"
                   />
                 </div>
-                <Button variant="outline" size="icon" className="hover:border-primary/50">
+                <Button variant="outline" size="icon">
                   <Filter className="h-4 w-4" />
                 </Button>
               </div>
@@ -203,7 +191,7 @@ const RunsheetManagement = () => {
             ) : (
               filteredRunsheets.map((runsheet) => {
                 const runsheetOrders = runsheet.orders_assigned
-                  .map(orderId => riderOrders.find(o => o.id === orderId))
+                  .map(orderId => orders.find(o => o.id === orderId))
                   .filter(Boolean);
                 const totalOrders = runsheetOrders.length;
                 const deliveredOrders = runsheetOrders.filter(o => o?.status === 'Delivered').length;
@@ -212,8 +200,8 @@ const RunsheetManagement = () => {
                 const codTotal = runsheetOrders.filter(o => o?.payment_mode === 'COD').reduce((sum, o) => sum + (o?.total_amount || 0), 0);
 
                 return (
-                  <div key={runsheet.id} className="p-5 rounded-lg border bg-card hover:border-primary/50 transition-all hover:shadow-md">
-                    <div className="flex items-start justify-between gap-6 flex-wrap">
+                  <div key={runsheet.id} className="p-5 rounded-lg border bg-card hover:border-primary/50 transition-colors">
+                    <div className="flex items-start justify-between gap-6">
                       {/* Left: Runsheet ID & Status */}
                       <div className="flex items-start gap-3">
                         <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
@@ -226,14 +214,13 @@ const RunsheetManagement = () => {
                               {runsheet.status}
                             </Badge>
                           </div>
-                          <p className="text-sm text-muted-foreground">
-                            Date: {runsheet.run_date}
-                          </p>
+                          <p className="text-sm text-muted-foreground">Created: 09:30 AM</p>
+                          <p className="text-sm text-muted-foreground">Date: {runsheet.run_date}</p>
                         </div>
                       </div>
 
                       {/* Middle: Rider Info */}
-                      <div className="flex-1 min-w-[150px]">
+                      <div className="flex-1">
                         <p className="text-xs text-muted-foreground mb-1">Assigned Rider</p>
                         <p className="font-semibold text-foreground mb-1">{runsheet.rider_name}</p>
                         <p className="text-sm text-muted-foreground">{runsheet.rider_id}</p>
@@ -241,7 +228,7 @@ const RunsheetManagement = () => {
                       </div>
 
                       {/* Progress */}
-                      <div className="flex-1 min-w-[150px]">
+                      <div className="flex-1">
                         <p className="text-xs text-muted-foreground mb-2">Order Progress</p>
                         <div className="space-y-2">
                           <div className="flex items-center justify-between text-sm">
@@ -253,7 +240,7 @@ const RunsheetManagement = () => {
                       </div>
 
                       {/* Financial */}
-                      <div className="text-right min-w-[120px]">
+                      <div className="text-right">
                         <p className="text-xs text-muted-foreground mb-1">Prepaid:</p>
                         <p className="text-lg font-bold text-success mb-2">₹{prepaidTotal.toLocaleString()}</p>
                         <p className="text-xs text-muted-foreground mb-1">COD:</p>
@@ -261,34 +248,19 @@ const RunsheetManagement = () => {
                       </div>
 
                       {/* Actions */}
-                      <div className="flex flex-col gap-2 min-w-[120px]">
-                        <Button 
-                          size="sm" 
-                          variant="outline" 
-                          className="w-full gap-2 hover:border-primary/50"
-                          onClick={() => navigate(`/delivery/runsheets/${runsheet.id}`)}
-                        >
-                          <Eye className="h-3 w-3" />
-                          View Details
-                        </Button>
-                        <Button 
-                          size="sm" 
-                          variant="default" 
-                          className="gap-2 hover:shadow-md"
-                          onClick={() => {
-                            setSelectedRunsheet({
-                              id: runsheet.id,
-                              delivered: deliveredOrders,
-                              total: totalOrders,
-                              prepaid: prepaidTotal,
-                              cod: codTotal
-                            });
-                            setCloseDialogOpen(true);
-                          }}
-                        >
-                          <XCircle className="h-3 w-3" />
-                          Close Runsheet
-                        </Button>
+                      <div className="flex flex-col gap-2">
+                        <Link to={`/delivery/runsheets/${runsheet.id}`}>
+                          <Button size="sm" variant="outline" className="w-full gap-2">
+                            <Eye className="h-3 w-3" />
+                            View Details
+                          </Button>
+                        </Link>
+                        <Link to={`/delivery/close-runsheet/${runsheet.id}`}>
+                          <Button size="sm" variant="default" className="w-full gap-2">
+                            <XCircle className="h-3 w-3" />
+                            Close Runsheet
+                          </Button>
+                        </Link>
                       </div>
                     </div>
                   </div>
@@ -298,23 +270,10 @@ const RunsheetManagement = () => {
           </CardContent>
         </Card>
       </main>
-      {selectedRunsheet && (
-        <CloseRunsheetDialog
-          open={closeDialogOpen}
-          onOpenChange={setCloseDialogOpen}
-          runsheetId={selectedRunsheet.id}
-          delivered={selectedRunsheet.delivered}
-          total={selectedRunsheet.total}
-          expectedCOD={selectedRunsheet.cod}
-          prepaidTotal={selectedRunsheet.prepaid}
-          onConfirm={() => {
-            // Simulate closure; in real app call API and refresh list
-            setCloseDialogOpen(false);
-          }}
-        />
-      )}
     </div>
   );
 };
 
 export default RunsheetManagement;
+
+

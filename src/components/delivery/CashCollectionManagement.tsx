@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, AlertTriangle, CheckCircle, DollarSign, Clock, FileText } from "lucide-react";
+import { Search, AlertTriangle, CheckCircle, DollarSign, Clock } from "lucide-react";
 
 const CashCollectionManagement = () => {
   const navigate = useNavigate();
@@ -77,10 +77,10 @@ const CashCollectionManagement = () => {
   const pendingVerification = codCollections.filter((c) => !c.verified).length;
 
   return (
-    <div className="min-h-screen bg-gradient-background">
+    <div className="min-h-screen bg-background">
       <header className="border-b bg-card sticky top-0 z-10 shadow-sm">
         <div className="container mx-auto px-6 py-4">
-          <h1 className="text-2xl font-bold text-foreground font-display">Cash Collection & Settlement</h1>
+          <h1 className="text-2xl font-bold text-foreground">Cash Collection & Settlement</h1>
           <p className="text-sm text-muted-foreground">Verify and manage COD collections from riders</p>
         </div>
       </header>
@@ -88,57 +88,57 @@ const CashCollectionManagement = () => {
       <main className="container mx-auto px-6 py-8">
         {/* Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          <Card className="hover:shadow-lg transition-shadow">
+          <Card>
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Expected COD</p>
                   <p className="text-2xl font-bold text-foreground">₹{totalExpected.toLocaleString()}</p>
                 </div>
-                <DollarSign className="h-8 w-8 text-warning opacity-50" />
+                <DollarSign className="h-8 w-8 text-amber-600 opacity-50" />
               </div>
             </CardContent>
           </Card>
 
-          <Card className="hover:shadow-lg transition-shadow">
+          <Card>
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Collected</p>
-                  <p className="text-2xl font-bold text-success">₹{totalCollected.toLocaleString()}</p>
+                  <p className="text-2xl font-bold text-green-600">₹{totalCollected.toLocaleString()}</p>
                 </div>
-                <CheckCircle className="h-8 w-8 text-success opacity-50" />
+                <CheckCircle className="h-8 w-8 text-green-600 opacity-50" />
               </div>
             </CardContent>
           </Card>
 
-          <Card className="hover:shadow-lg transition-shadow">
+          <Card>
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Discrepancy</p>
-                  <p className="text-2xl font-bold text-destructive">₹{totalDiscrepancy.toLocaleString()}</p>
+                  <p className="text-2xl font-bold text-red-600">₹{totalDiscrepancy.toLocaleString()}</p>
                 </div>
-                <AlertTriangle className="h-8 w-8 text-destructive opacity-50" />
+                <AlertTriangle className="h-8 w-8 text-red-600 opacity-50" />
               </div>
             </CardContent>
           </Card>
 
-          <Card className="hover:shadow-lg transition-shadow">
+          <Card>
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Pending Verification</p>
-                  <p className="text-2xl font-bold text-warning">{pendingVerification}</p>
+                  <p className="text-2xl font-bold text-orange-600">{pendingVerification}</p>
                 </div>
-                <Clock className="h-8 w-8 text-warning opacity-50" />
+                <Clock className="h-8 w-8 text-orange-600 opacity-50" />
               </div>
             </CardContent>
           </Card>
         </div>
 
         {/* Filters */}
-        <Card className="mb-6 hover:shadow-md transition-shadow">
+        <Card className="mb-6">
           <CardContent className="pt-6">
             <div className="flex flex-col md:flex-row gap-4">
               <div className="flex-1 relative">
@@ -167,7 +167,7 @@ const CashCollectionManagement = () => {
 
         {/* Collections List */}
         <div className="mb-4">
-          <h2 className="text-xl font-bold text-foreground font-display">COD Collections ({filteredCollections.length})</h2>
+          <h2 className="text-xl font-bold text-foreground">COD Collections ({filteredCollections.length})</h2>
         </div>
 
         <div className="space-y-4">
@@ -177,7 +177,7 @@ const CashCollectionManagement = () => {
                 <div className="flex flex-col lg:flex-row gap-6">
                   {/* Runsheet Info */}
                   <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-3">
+                    <div className="flex items中心 gap-3 mb-3">
                       <div className="flex items-center gap-2">
                         <FileText className="h-5 w-5 text-primary" />
                         <h3 className="font-bold text-foreground">{collection.id}</h3>
@@ -191,7 +191,7 @@ const CashCollectionManagement = () => {
                         {collection.status}
                       </Badge>
                       {collection.verified && (
-                        <Badge variant="default" className="bg-success">
+                        <Badge variant="default" className="bg-green-600">
                           Verified
                         </Badge>
                       )}
@@ -220,12 +220,12 @@ const CashCollectionManagement = () => {
                       </div>
                       <div className="flex justify-between text-sm">
                         <span className="text-muted-foreground">Collected:</span>
-                        <span className="font-medium text-success">₹{collection.collected.toLocaleString()}</span>
+                        <span className="font-medium text-green-600">₹{collection.collected.toLocaleString()}</span>
                       </div>
                       {collection.difference !== 0 && (
                         <div className="flex justify-between text-sm">
                           <span className="text-muted-foreground">Difference:</span>
-                          <span className="font-medium text-destructive">₹{Math.abs(collection.difference).toLocaleString()}</span>
+                          <span className="font-medium text-red-600">₹{Math.abs(collection.difference).toLocaleString()}</span>
                         </div>
                       )}
                       <div className="flex justify-between text-sm">
@@ -253,7 +253,7 @@ const CashCollectionManagement = () => {
                   <div className="flex flex-col gap-2">
                     <Button 
                       size="sm" 
-                      className="whitespace-nowrap hover:shadow-md"
+                      className="whitespace-nowrap"
                       onClick={() => navigate(`/delivery/cash-verification/${collection.id}`)}
                     >
                       <CheckCircle className="h-3 w-3 mr-2" />
@@ -262,7 +262,7 @@ const CashCollectionManagement = () => {
                     <Button 
                       size="sm" 
                       variant="outline" 
-                      className="whitespace-nowrap hover:border-primary/50"
+                      className="whitespace-nowrap"
                       onClick={() => navigate(`/delivery/collection-details/${collection.id}`)}
                     >
                       Details
@@ -278,5 +278,12 @@ const CashCollectionManagement = () => {
   );
 };
 
+const FileText = ({ className }: { className?: string }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+  </svg>
+);
+
 export default CashCollectionManagement;
+
 

@@ -3,17 +3,28 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { 
   Users, TrendingUp, Clock, Package, DollarSign, 
-  FileText, Search, Phone, MapPin, UserX
+  FileText, Search, Phone, MapPin, Navigation, AlertCircle,
+  UserX, RefreshCw, MoreVertical
 } from "lucide-react";
 import { Link } from "react-router-dom";
-import { riders, riderRunsheets } from "@/data/riderData";
+import { riders } from "@/data/dummyData";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 const RiderManagementDashboard = () => {
   const [filteredRiders, setFilteredRiders] = useState(riders);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [zoneFilter, setZoneFilter] = useState("all");
+  const [vehicleFilter, setVehicleFilter] = useState("all");
+  const [viewMode, setViewMode] = useState<"all" | "active" | "inactive">("all");
 
   const stats = {
     totalRiders: riders.length,
@@ -21,14 +32,19 @@ const RiderManagementDashboard = () => {
     availableRiders: riders.filter(r => r.current_status === 'Available').length,
     ordersOutForDelivery: riders.reduce((sum, r) => sum + r.orders_out_for_delivery, 0),
     codOutstanding: riders.reduce((sum, r) => sum + r.cod_outstanding, 0),
-    openRunsheets: riderRunsheets.filter(r => r.status !== 'Completed').length,
+    openRunsheets: riders.filter(r => r.current_runsheet_id).length,
     offlineRiders: riders.filter(r => r.current_status === 'Offline').length
   };
 
   useEffect(() => {
     let filtered = riders;
 
-    // Search filter
+    if (viewMode === "active") {
+      filtered = filtered.filter(r => r.active);
+    } else if (viewMode === "inactive") {
+      filtered = filtered.filter(r => !r.active);
+    }
+
     if (searchQuery) {
       filtered = filtered.filter(rider => 
         rider.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -38,13 +54,20 @@ const RiderManagementDashboard = () => {
       );
     }
 
-    // Status filter
     if (statusFilter !== "all") {
       filtered = filtered.filter(rider => rider.current_status === statusFilter);
     }
 
+    if (zoneFilter !== "all") {
+      filtered = filtered.filter(rider => rider.zone === zoneFilter);
+    }
+
+    if (vehicleFilter !== "all") {
+      filtered = filtered.filter(rider => rider.vehicle_type === vehicleFilter);
+    }
+
     setFilteredRiders(filtered);
-  }, [searchQuery, statusFilter]);
+  }, [riders, searchQuery, statusFilter, zoneFilter, vehicleFilter, viewMode]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -56,52 +79,35 @@ const RiderManagementDashboard = () => {
     }
   };
 
-  const getTimeSinceLastSeen = (lastSeen: string) => {
-    const now = new Date();
-    const last = new Date(lastSeen);
-    const diffMinutes = Math.floor((now.getTime() - last.getTime()) / 60000);
-    
-    if (diffMinutes < 1) return 'Just now';
-    if (diffMinutes < 60) return `${diffMinutes}m ago`;
-    const diffHours = Math.floor(diffMinutes / 60);
-    if (diffHours < 24) return `${diffHours}h ago`;
-    const diffDays = Math.floor(diffHours / 24);
-    return `${diffDays}d ago`;
-  };
-
   const zones = Array.from(new Set(riders.map(r => r.zone))).sort();
 
   return (
-    <div className="min-h-screen bg-gradient-background">
-      <header className="bg-card border-b sticky top-0 z-10 shadow-sm">
-        <div className="container mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-foreground">Rider Management</h1>
-              <p className="text-sm text-muted-foreground">Monitor and manage delivery riders</p>
-            </div>
-            <div className="flex gap-3">
-              <Link to="/delivery/rider-onboarding-queue">
-                <Button variant="outline">
-                  <Users className="h-4 w-4 mr-2" />
-                  Onboarding Queue
-                </Button>
-              </Link>
-              <Link to="/delivery/runsheets">
-                <Button>
-                  <FileText className="h-4 w-4 mr-2" />
-                  Manage Runsheets
-                </Button>
-              </Link>
-            </div>
+    <div className="min-h-screen bg-muted/30">
+      <main className="container mx-auto px-6 py-8">
+        {/* Page header (no white background container) */}
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-semibold text-foreground">Rider Management</h1>
+            <p className="text-sm text-muted-foreground">Monitor and manage delivery riders</p>
+          </div>
+          <div className="flex gap-3">
+            <Link to="/delivery/rider-onboarding-queue">
+              <Button variant="outline" className="gap-2">
+                <Users className="h-4 w-4" />
+                Onboarding Queue
+              </Button>
+            </Link>
+            <Link to="/delivery/runsheets">
+              <Button className="gap-2">
+                <FileText className="h-4 w-4" />
+                Manage Runsheets
+              </Button>
+            </Link>
           </div>
         </div>
-      </header>
-
-      <main className="container mx-auto px-6 py-8">
         {/* KPI Cards */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-4 mb-8">
-          <Card className="hover:shadow-lg transition-shadow">
+          <Card>
             <CardContent className="pt-6">
               <div className="flex flex-col gap-2">
                 <div className="flex items-center gap-2">
@@ -117,7 +123,7 @@ const RiderManagementDashboard = () => {
             </CardContent>
           </Card>
 
-          <Card className="hover:shadow-lg transition-shadow">
+          <Card>
             <CardContent className="pt-6">
               <div className="flex flex-col gap-2">
                 <div className="flex items-center gap-2">
@@ -133,7 +139,7 @@ const RiderManagementDashboard = () => {
             </CardContent>
           </Card>
 
-          <Card className="hover:shadow-lg transition-shadow">
+          <Card>
             <CardContent className="pt-6">
               <div className="flex flex-col gap-2">
                 <div className="flex items-center gap-2">
@@ -149,7 +155,7 @@ const RiderManagementDashboard = () => {
             </CardContent>
           </Card>
 
-          <Card className="hover:shadow-lg transition-shadow">
+          <Card>
             <CardContent className="pt-6">
               <div className="flex flex-col gap-2">
                 <div className="flex items-center gap-2">
@@ -165,7 +171,7 @@ const RiderManagementDashboard = () => {
             </CardContent>
           </Card>
 
-          <Card className="hover:shadow-lg transition-shadow">
+          <Card>
             <CardContent className="pt-6">
               <div className="flex flex-col gap-2">
                 <div className="flex items-center gap-2">
@@ -181,7 +187,7 @@ const RiderManagementDashboard = () => {
             </CardContent>
           </Card>
 
-          <Card className="hover:shadow-lg transition-shadow">
+          <Card>
             <CardContent className="pt-6">
               <div className="flex flex-col gap-2">
                 <div className="flex items-center gap-2">
@@ -197,7 +203,7 @@ const RiderManagementDashboard = () => {
             </CardContent>
           </Card>
 
-          <Card className="hover:shadow-lg transition-shadow">
+          <Card>
             <CardContent className="pt-6">
               <div className="flex flex-col gap-2">
                 <div className="flex items-center gap-2">
@@ -212,10 +218,10 @@ const RiderManagementDashboard = () => {
               </div>
             </CardContent>
           </Card>
-        </div>
+            </div>
 
         {/* Filters */}
-        <Card className="mb-6 hover:shadow-md transition-shadow">
+        <Card className="mb-6">
           <CardContent className="pt-6">
             <div className="flex flex-col md:flex-row gap-4">
               <div className="flex-1">
@@ -257,7 +263,7 @@ const RiderManagementDashboard = () => {
                   size="sm"
                 >
                   Busy
-                </Button>
+                        </Button>
               </div>
             </div>
           </CardContent>
@@ -292,7 +298,7 @@ const RiderManagementDashboard = () => {
                   <div className="flex items-center gap-2 text-sm">
                     <MapPin className="h-4 w-4 text-muted-foreground" />
                     <span className="text-muted-foreground">
-                      Last seen: {rider.last_seen ? getTimeSinceLastSeen(rider.last_seen) : 'Never'}
+                      Last seen: {rider.last_seen ? new Date(rider.last_seen).toLocaleTimeString() : 'Never'}
                     </span>
                   </div>
 
@@ -302,11 +308,11 @@ const RiderManagementDashboard = () => {
                       <p className="text-xs text-muted-foreground">Out</p>
                     </div>
                     <div>
-                      <p className="text-lg font-bold text-warning">{rider.orders_pending_pickup || 0}</p>
+                      <p className="text-lg font-bold text-yellow-500">{rider.orders_pending_pickup || 0}</p>
                       <p className="text-xs text-muted-foreground">Pending</p>
                     </div>
                     <div>
-                      <p className="text-lg font-bold text-success">{rider.orders_delivered_today || 0}</p>
+                      <p className="text-lg font-bold text-green-500">{rider.orders_delivered_today || 0}</p>
                       <p className="text-xs text-muted-foreground">Delivered</p>
                     </div>
                   </div>
@@ -339,7 +345,7 @@ const RiderManagementDashboard = () => {
         </div>
 
         {filteredRiders.length === 0 && (
-          <Card className="hover:shadow-md transition-shadow">
+          <Card>
             <CardContent className="py-12 text-center">
               <p className="text-muted-foreground">No riders found matching your filters</p>
             </CardContent>
@@ -351,4 +357,5 @@ const RiderManagementDashboard = () => {
 };
 
 export default RiderManagementDashboard;
+
 

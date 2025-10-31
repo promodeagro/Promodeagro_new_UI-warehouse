@@ -30,7 +30,7 @@ const CollectionDetailsView = () => {
 
   // Dummy collection detail data
   const collectionDetail = {
-    runsheetId: id || "RS-2025-001",
+    runsheetId: "RS-2025-001",
     collectionId: "CC-001",
     status: "Collected",
     verified: true,
@@ -119,21 +119,16 @@ const CollectionDetailsView = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-background">
+    <div className="min-h-screen bg-muted/30">
       <header className="bg-card border-b sticky top-0 z-10 shadow-sm">
         <div className="container mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                onClick={() => navigate("/delivery/cash-collection")}
-                className="hover:bg-muted"
-              >
+              <Button variant="ghost" size="icon" onClick={() => navigate("/cash-collection")}>
                 <ArrowLeft className="h-5 w-5" />
               </Button>
               <div>
-                <h1 className="text-2xl font-bold text-foreground font-display">Collection Details</h1>
+                <h1 className="text-2xl font-bold text-foreground">Collection Details</h1>
                 <p className="text-sm text-muted-foreground">
                   {collectionDetail.collectionId} - {collectionDetail.runsheetId}
                 </p>
@@ -141,7 +136,7 @@ const CollectionDetailsView = () => {
             </div>
             <div className="flex items-center gap-3">
               {collectionDetail.verified && (
-                <Badge variant="default" className="bg-success text-success-foreground">
+                <Badge variant="default" className="bg-green-600">
                   <CheckCircle className="h-3 w-3 mr-1" />
                   Verified
                 </Badge>
@@ -157,7 +152,7 @@ const CollectionDetailsView = () => {
       <main className="container mx-auto px-6 py-8 space-y-6">
         {/* Top Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card className="hover:shadow-md transition-shadow">
+          <Card>
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
@@ -166,26 +161,26 @@ const CollectionDetailsView = () => {
                     ₹{collectionDetail.collection.expectedCOD.toLocaleString()}
                   </p>
                 </div>
-                <DollarSign className="h-8 w-8 text-warning opacity-50" />
+                <DollarSign className="h-8 w-8 text-amber-600 opacity-50" />
               </div>
             </CardContent>
           </Card>
 
-          <Card className="hover:shadow-md transition-shadow">
+          <Card>
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Collected COD</p>
-                  <p className="text-2xl font-bold text-success">
+                  <p className="text-2xl font-bold text-green-600">
                     ₹{collectionDetail.collection.collectedCOD.toLocaleString()}
                   </p>
                 </div>
-                <CheckCircle className="h-8 w-8 text-success opacity-50" />
+                <CheckCircle className="h-8 w-8 text-green-600 opacity-50" />
               </div>
             </CardContent>
           </Card>
 
-          <Card className="hover:shadow-md transition-shadow">
+          <Card>
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
@@ -199,7 +194,7 @@ const CollectionDetailsView = () => {
             </CardContent>
           </Card>
 
-          <Card className="hover:shadow-md transition-shadow">
+          <Card>
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
@@ -216,9 +211,9 @@ const CollectionDetailsView = () => {
 
         {/* Rider & Runsheet Information */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <Card className="hover:shadow-md transition-shadow">
+          <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 font-display">
+              <CardTitle className="flex items-center gap-2">
                 <User className="h-5 w-5" />
                 Rider Information
               </CardTitle>
@@ -247,9 +242,9 @@ const CollectionDetailsView = () => {
             </CardContent>
           </Card>
 
-          <Card className="hover:shadow-md transition-shadow">
+          <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 font-display">
+              <CardTitle className="flex items-center gap-2">
                 <FileTextIcon className="h-5 w-5" />
                 Runsheet Information
               </CardTitle>
@@ -275,15 +270,15 @@ const CollectionDetailsView = () => {
               <div className="grid grid-cols-3 gap-2 text-sm">
                 <div>
                   <p className="text-muted-foreground">Delivered</p>
-                  <p className="font-bold text-success">{collectionDetail.runsheet.deliveredOrders}</p>
+                  <p className="font-bold text-green-600">{collectionDetail.runsheet.deliveredOrders}</p>
                 </div>
                 <div>
                   <p className="text-muted-foreground">Pending</p>
-                  <p className="font-bold text-warning">{collectionDetail.runsheet.pendingOrders}</p>
+                  <p className="font-bold text-amber-600">{collectionDetail.runsheet.pendingOrders}</p>
                 </div>
                 <div>
                   <p className="text-muted-foreground">Returned</p>
-                  <p className="font-bold text-destructive">{collectionDetail.runsheet.returnedOrders}</p>
+                  <p className="font-bold text-red-600">{collectionDetail.runsheet.returnedOrders}</p>
                 </div>
               </div>
             </CardContent>
@@ -291,9 +286,9 @@ const CollectionDetailsView = () => {
         </div>
 
         {/* Collection Details */}
-        <Card className="hover:shadow-md transition-shadow">
+        <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 font-display">
+            <CardTitle className="flex items-center gap-2">
               <DollarSign className="h-5 w-5" />
               Collection Summary
             </CardTitle>
@@ -307,7 +302,7 @@ const CollectionDetailsView = () => {
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Collected COD:</span>
-                  <span className="font-bold text-success">₹{collectionDetail.collection.collectedCOD.toLocaleString()}</span>
+                  <span className="font-bold text-green-600">₹{collectionDetail.collection.collectedCOD.toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Expected Prepaid:</span>
@@ -315,7 +310,7 @@ const CollectionDetailsView = () => {
                 </div>
                 <div className="flex justify-between text-sm pt-2 border-t">
                   <span className="text-muted-foreground font-medium">Difference:</span>
-                  <span className={`font-bold ${collectionDetail.collection.difference === 0 ? 'text-success' : 'text-destructive'}`}>
+                  <span className={`font-bold ${collectionDetail.collection.difference === 0 ? 'text-green-600' : 'text-red-600'}`}>
                     ₹{collectionDetail.collection.difference.toLocaleString()}
                   </span>
                 </div>
@@ -347,9 +342,9 @@ const CollectionDetailsView = () => {
         </Card>
 
         {/* Orders Breakdown */}
-        <Card className="hover:shadow-md transition-shadow">
+        <Card>
           <CardHeader>
-            <CardTitle className="font-display">Orders Breakdown</CardTitle>
+            <CardTitle>Orders Breakdown</CardTitle>
           </CardHeader>
           <CardContent>
             <Table>
@@ -373,7 +368,7 @@ const CollectionDetailsView = () => {
                     <TableCell>
                       <Badge 
                         variant="outline"
-                        className={order.paymentMode === "COD" ? "bg-warning/10 text-warning border-warning/20" : "bg-primary/10 text-primary border-primary/20"}
+                        className={order.paymentMode === "COD" ? "bg-amber-50 text-amber-700" : "bg-blue-50 text-blue-700"}
                       >
                         {order.paymentMode}
                       </Badge>
@@ -382,7 +377,7 @@ const CollectionDetailsView = () => {
                     <TableCell>
                       <Badge
                         variant={order.status === "Delivered" ? "default" : "destructive"}
-                        className={order.status === "Delivered" ? "bg-success text-success-foreground" : ""}
+                        className={order.status === "Delivered" ? "bg-green-600" : ""}
                       >
                         {order.status}
                       </Badge>
@@ -396,9 +391,9 @@ const CollectionDetailsView = () => {
         </Card>
 
         {/* Timeline */}
-        <Card className="hover:shadow-md transition-shadow">
+        <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 font-display">
+            <CardTitle className="flex items-center gap-2">
               <Clock className="h-5 w-5" />
               Activity Timeline
             </CardTitle>
@@ -408,8 +403,8 @@ const CollectionDetailsView = () => {
               {collectionDetail.timeline.map((event, index) => (
                 <div key={index} className="flex items-start gap-4">
                   <div className="flex-shrink-0">
-                    <div className="w-8 h-8 rounded-full bg-success flex items-center justify-center">
-                      <CheckCircle className="h-4 w-4 text-success-foreground" />
+                    <div className="w-8 h-8 rounded-full bg-green-600 flex items-center justify-center">
+                      <CheckCircle className="h-4 w-4 text-white" />
                     </div>
                   </div>
                   <div className="flex-1">
@@ -424,14 +419,10 @@ const CollectionDetailsView = () => {
 
         {/* Action Buttons */}
         <div className="flex justify-end gap-3">
-          <Button 
-            variant="outline" 
-            onClick={() => navigate("/delivery/cash-collection")}
-            className="hover:border-primary/50"
-          >
+          <Button variant="outline" onClick={() => navigate("/delivery/cash-collection")}>
             Back to Collections
           </Button>
-          <Button onClick={() => window.print()} className="hover:shadow-md">
+          <Button onClick={() => window.print()}>
             <FileTextIcon className="h-4 w-4 mr-2" />
             Print Details
           </Button>
@@ -442,4 +433,5 @@ const CollectionDetailsView = () => {
 };
 
 export default CollectionDetailsView;
+
 

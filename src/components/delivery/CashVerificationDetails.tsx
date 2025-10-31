@@ -39,7 +39,7 @@ const CashVerificationDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
-  
+
   const [collectedAmount, setCollectedAmount] = useState("");
   const [paymentMode, setPaymentMode] = useState("");
   const [transactionRef, setTransactionRef] = useState("");
@@ -49,7 +49,7 @@ const CashVerificationDetails = () => {
 
   // Dummy collection data
   const collectionData = {
-    runsheetId: id || "RS-2025-001",
+    runsheetId: "RS-2025-001",
     collectionId: "CC-001",
     rider: {
       name: "Rajesh Kumar",
@@ -157,21 +157,16 @@ const CashVerificationDetails = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-background">
+    <div className="min-h-screen bg-muted/30">
       <header className="bg-card border-b sticky top-0 z-10 shadow-sm">
         <div className="container mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                onClick={() => navigate("/delivery/cash-collection")}
-                className="hover:bg-muted"
-              >
+              <Button variant="ghost" size="icon" onClick={() => navigate("/cash-collection")}>
                 <ArrowLeft className="h-5 w-5" />
               </Button>
               <div>
-                <h1 className="text-2xl font-bold text-foreground font-display">Verify Cash Collection</h1>
+                <h1 className="text-2xl font-bold text-foreground">Verify Cash Collection</h1>
                 <p className="text-sm text-muted-foreground">{collectionData.collectionId} - {collectionData.runsheetId}</p>
               </div>
             </div>
@@ -182,9 +177,9 @@ const CashVerificationDetails = () => {
                 "outline"
               }
               className={
-                verificationStatus === "verified" ? "bg-success text-success-foreground" :
-                verificationStatus === "rejected" ? "bg-destructive text-destructive-foreground" :
-                "bg-warning text-warning-foreground"
+                verificationStatus === "verified" ? "bg-green-600" :
+                verificationStatus === "rejected" ? "bg-red-600" :
+                "bg-amber-600"
               }
             >
               {verificationStatus === "verified" ? "✓ Verified" :
@@ -198,7 +193,7 @@ const CashVerificationDetails = () => {
       <main className="container mx-auto px-6 py-8 space-y-6">
         {/* Rider & Runsheet Info */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card className="hover:shadow-md transition-shadow">
+          <Card>
             <CardContent className="pt-6">
               <div className="flex items-start gap-3">
                 <div className="p-2 rounded-lg bg-primary/10">
@@ -214,7 +209,7 @@ const CashVerificationDetails = () => {
             </CardContent>
           </Card>
 
-          <Card className="hover:shadow-md transition-shadow">
+          <Card>
             <CardContent className="pt-6">
               <div className="flex items-start gap-3">
                 <div className="p-2 rounded-lg bg-primary/10">
@@ -230,7 +225,7 @@ const CashVerificationDetails = () => {
             </CardContent>
           </Card>
 
-          <Card className="hover:shadow-md transition-shadow">
+          <Card>
             <CardContent className="pt-6">
               <div className="flex items-start gap-3">
                 <div className="p-2 rounded-lg bg-primary/10">
@@ -249,9 +244,9 @@ const CashVerificationDetails = () => {
         </div>
 
         {/* Collection Verification Form */}
-        <Card className="hover:shadow-md transition-shadow">
+        <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 font-display">
+            <CardTitle className="flex items-center gap-2">
               <DollarSign className="h-5 w-5" />
               Cash Collection Details
             </CardTitle>
@@ -266,7 +261,7 @@ const CashVerificationDetails = () => {
               </div>
               <div>
                 <Label className="text-sm font-medium">Expected Prepaid</Label>
-                <div className="text-3xl font-bold text-success mt-2">
+                <div className="text-3xl font-bold text-green-600 mt-2">
                   ₹{collectionData.expectedPrepaid.toLocaleString()}
                 </div>
               </div>
@@ -325,11 +320,7 @@ const CashVerificationDetails = () => {
               <div>
                 <Label>Upload Proof (Optional)</Label>
                 <div className="mt-2">
-                  <Button 
-                    variant="outline" 
-                    className="w-full hover:border-primary/50" 
-                    disabled={verificationStatus !== "pending"}
-                  >
+                  <Button variant="outline" className="w-full" disabled={verificationStatus !== "pending"}>
                     <Upload className="h-4 w-4 mr-2" />
                     Upload Screenshot/Receipt
                   </Button>
@@ -338,32 +329,32 @@ const CashVerificationDetails = () => {
             </div>
 
             {calculatedDifference > 0 && collectedAmount && (
-              <div className="bg-warning/10 border border-warning/20 rounded-lg p-4">
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
                 <div className="flex items-center gap-2 mb-3">
-                  <AlertTriangle className="h-5 w-5 text-warning" />
-                  <p className="font-bold text-foreground">Collection Discrepancy Detected</p>
+                  <AlertTriangle className="h-5 w-5 text-amber-600" />
+                  <p className="font-bold text-amber-900">Collection Discrepancy Detected</p>
                 </div>
                 <div className="grid grid-cols-2 gap-3 text-sm mb-3">
                   <div>
-                    <span className="text-muted-foreground">Expected:</span>
-                    <span className="font-bold text-foreground ml-2">₹{collectionData.expectedCOD.toLocaleString()}</span>
+                    <span className="text-amber-700">Expected:</span>
+                    <span className="font-bold text-amber-900 ml-2">₹{collectionData.expectedCOD.toLocaleString()}</span>
                   </div>
                   <div>
-                    <span className="text-muted-foreground">Collected:</span>
-                    <span className="font-bold text-foreground ml-2">₹{parseFloat(collectedAmount).toLocaleString()}</span>
+                    <span className="text-amber-700">Collected:</span>
+                    <span className="font-bold text-amber-900 ml-2">₹{parseFloat(collectedAmount).toLocaleString()}</span>
                   </div>
                   <div className="col-span-2">
-                    <span className="text-muted-foreground">Difference:</span>
-                    <span className="font-bold text-destructive ml-2">₹{calculatedDifference.toLocaleString()}</span>
+                    <span className="text-amber-700">Difference:</span>
+                    <span className="font-bold text-red-600 ml-2">₹{calculatedDifference.toLocaleString()}</span>
                   </div>
                 </div>
                 <div>
-                  <Label>Discrepancy Reason *</Label>
+                  <Label className="text-amber-900">Discrepancy Reason *</Label>
                   <Textarea
                     placeholder="Explain the reason for the difference..."
                     value={discrepancyReason}
                     onChange={(e) => setDiscrepancyReason(e.target.value)}
-                    className="mt-2"
+                    className="mt-2 border-amber-300"
                     rows={3}
                     disabled={verificationStatus !== "pending"}
                   />
@@ -386,9 +377,9 @@ const CashVerificationDetails = () => {
         </Card>
 
         {/* COD Orders Breakdown */}
-        <Card className="hover:shadow-md transition-shadow">
+        <Card>
           <CardHeader>
-            <CardTitle className="font-display">COD Orders Breakdown</CardTitle>
+            <CardTitle>COD Orders Breakdown</CardTitle>
           </CardHeader>
           <CardContent>
             <Table>
@@ -407,7 +398,7 @@ const CashVerificationDetails = () => {
                     <TableCell>{order.customer}</TableCell>
                     <TableCell className="font-bold">₹{order.amount.toLocaleString()}</TableCell>
                     <TableCell>
-                      <Badge variant="default" className="bg-success text-success-foreground">
+                      <Badge variant="default" className="bg-green-600">
                         {order.status}
                       </Badge>
                     </TableCell>
@@ -419,12 +410,11 @@ const CashVerificationDetails = () => {
         </Card>
 
         {/* Action Buttons */}
-        <div className="flex justify-end gap-3 sticky bottom-0 bg-gradient-background py-4 border-t">
+        <div className="flex justify-end gap-3 sticky bottom-0 bg-muted/30 py-4">
           <Button 
             variant="outline" 
-            onClick={() => navigate("/delivery/cash-collection")}
+            onClick={() => navigate("/cash-collection")}
             size="lg"
-            className="hover:border-primary/50"
           >
             Cancel
           </Button>
@@ -434,14 +424,13 @@ const CashVerificationDetails = () => {
                 variant="destructive" 
                 onClick={handleRejectCollection}
                 size="lg"
-                className="hover:bg-destructive/90"
               >
                 Reject Collection
               </Button>
               <Button 
                 onClick={handleVerifyCollection}
                 size="lg"
-                className="min-w-48 hover:shadow-lg"
+                className="min-w-48"
               >
                 <CheckCircle className="h-4 w-4 mr-2" />
                 Verify & Approve
@@ -455,4 +444,5 @@ const CashVerificationDetails = () => {
 };
 
 export default CashVerificationDetails;
+
 

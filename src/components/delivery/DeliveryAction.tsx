@@ -5,49 +5,25 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
-import { riderOrders } from "@/data/riderData";
+import { orders } from "@/data/dummyData";
 import { ArrowLeft, Upload, CheckCircle2, XCircle, Camera } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
-import { Badge } from "@/components/ui/badge";
-
-// StatusBadge component inline since OrderStatus types differ
-const StatusBadge = ({ status }: { status: string }) => {
-  const statusColors: Record<string, { variant: "default" | "secondary" | "destructive" | "outline", className: string }> = {
-    'Placed': { variant: "outline", className: "bg-blue-50 text-blue-700 border-blue-200" },
-    'Accepted': { variant: "outline", className: "bg-purple-50 text-purple-700 border-purple-200" },
-    'Packed': { variant: "outline", className: "bg-orange-50 text-orange-700 border-orange-200" },
-    'Dispatched': { variant: "outline", className: "bg-indigo-50 text-indigo-700 border-indigo-200" },
-    'Delivered': { variant: "default", className: "bg-primary text-primary-foreground" },
-    'Cancelled': { variant: "destructive", className: "" },
-    'Returned': { variant: "outline", className: "bg-yellow-50 text-yellow-700 border-yellow-200" },
-    'Failed': { variant: "destructive", className: "" }
-  };
-  const config = statusColors[status] || { variant: "outline" as const, className: "" };
-  return <Badge variant={config.variant} className={config.className}>{status}</Badge>;
-};
+import { StatusBadge } from "@/components/StatusBadge";
 
 const DeliveryAction = () => {
   const { id } = useParams();
-  const order = riderOrders.find(o => o.id === id);
+  const order = orders.find(o => o.id === id);
   const [deliveryStatus, setDeliveryStatus] = useState<"delivered" | "failed" | "rescheduled">("delivered");
   const [codAmount, setCodAmount] = useState("");
   const [failureReason, setFailureReason] = useState("");
   const [proofImage, setProofImage] = useState<File | null>(null);
 
   if (!order) {
-    return (
-      <div className="min-h-screen bg-gradient-background flex items-center justify-center">
-        <Card>
-          <CardContent className="py-12 text-center">
-            <p className="text-muted-foreground">Order not found</p>
-          </CardContent>
-        </Card>
-      </div>
-    );
+    return <div>Order not found</div>;
   }
 
   const handleSubmit = () => {
-    // TODO: Integrate with API when backend is ready
+    // In real app, submit to backend
     console.log({
       orderId: order.id,
       status: deliveryStatus,
@@ -58,11 +34,11 @@ const DeliveryAction = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-background">
+    <div className="min-h-screen bg-muted/30">
       <header className="bg-card border-b sticky top-0 z-10 shadow-sm">
         <div className="container mx-auto px-6 py-4">
           <div className="flex items-center gap-4">
-            <Link to="/delivery/rider-portal">
+            <Link to="/delivery/rider">
               <Button variant="ghost" size="icon">
                 <ArrowLeft className="h-5 w-5" />
               </Button>
@@ -76,7 +52,7 @@ const DeliveryAction = () => {
       </header>
 
       <main className="container mx-auto px-6 py-8 max-w-2xl">
-        <Card className="mb-6 hover:shadow-md transition-shadow">
+        <Card className="mb-6">
           <CardHeader>
             <CardTitle>Order Summary</CardTitle>
           </CardHeader>
@@ -100,17 +76,17 @@ const DeliveryAction = () => {
           </CardContent>
         </Card>
 
-        <Card className="mb-6 hover:shadow-md transition-shadow">
+        <Card className="mb-6">
           <CardHeader>
             <CardTitle>Delivery Status</CardTitle>
           </CardHeader>
           <CardContent>
             <RadioGroup value={deliveryStatus} onValueChange={(v) => setDeliveryStatus(v as any)}>
-              <div className="flex items-center space-x-2 p-4 rounded-lg border cursor-pointer hover:border-primary transition-colors">
+              <div className="flex items-center space-x-2 p-4 rounded-lg border cursor-pointer hover:border-primary">
                 <RadioGroupItem value="delivered" id="delivered" />
                 <Label htmlFor="delivered" className="flex-1 cursor-pointer">
                   <div className="flex items-center gap-3">
-                    <CheckCircle2 className="h-5 w-5 text-success" />
+                    <CheckCircle2 className="h-5 w-5 text-primary" />
                     <div>
                       <p className="font-medium text-foreground">Delivered Successfully</p>
                       <p className="text-sm text-muted-foreground">Order was delivered to customer</p>
@@ -119,7 +95,7 @@ const DeliveryAction = () => {
                 </Label>
               </div>
 
-              <div className="flex items-center space-x-2 p-4 rounded-lg border cursor-pointer hover:border-primary transition-colors mt-3">
+              <div className="flex items-center space-x-2 p-4 rounded-lg border cursor-pointer hover:border-primary mt-3">
                 <RadioGroupItem value="failed" id="failed" />
                 <Label htmlFor="failed" className="flex-1 cursor-pointer">
                   <div className="flex items-center gap-3">
@@ -132,7 +108,7 @@ const DeliveryAction = () => {
                 </Label>
               </div>
 
-              <div className="flex items-center space-x-2 p-4 rounded-lg border cursor-pointer hover:border-primary transition-colors mt-3">
+              <div className="flex items-center space-x-2 p-4 rounded-lg border cursor-pointer hover:border-primary mt-3">
                 <RadioGroupItem value="rescheduled" id="rescheduled" />
                 <Label htmlFor="rescheduled" className="flex-1 cursor-pointer">
                   <div className="flex items-center gap-3">
@@ -150,7 +126,7 @@ const DeliveryAction = () => {
 
         {deliveryStatus === "delivered" && (
           <>
-            <Card className="mb-6 hover:shadow-md transition-shadow">
+            <Card className="mb-6">
               <CardHeader>
                 <CardTitle>Delivery Proof</CardTitle>
               </CardHeader>
@@ -179,7 +155,7 @@ const DeliveryAction = () => {
             </Card>
 
             {order.payment_mode === 'COD' && (
-              <Card className="mb-6 hover:shadow-md transition-shadow">
+              <Card className="mb-6">
                 <CardHeader>
                   <CardTitle>COD Collection</CardTitle>
                 </CardHeader>
@@ -205,7 +181,7 @@ const DeliveryAction = () => {
         )}
 
         {(deliveryStatus === "failed" || deliveryStatus === "rescheduled") && (
-          <Card className="mb-6 hover:shadow-md transition-shadow">
+          <Card className="mb-6">
             <CardHeader>
               <CardTitle>Reason</CardTitle>
             </CardHeader>
@@ -224,7 +200,7 @@ const DeliveryAction = () => {
         )}
 
         <div className="flex gap-3">
-          <Link to="/delivery/rider-portal" className="flex-1">
+          <Link to="/rider" className="flex-1">
             <Button variant="outline" className="w-full">Cancel</Button>
           </Link>
           <Button className="flex-1" onClick={handleSubmit}>
@@ -237,4 +213,5 @@ const DeliveryAction = () => {
 };
 
 export default DeliveryAction;
+
 
