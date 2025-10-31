@@ -12,6 +12,7 @@ import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { useCategories } from "@/contexts/CategoryContext";
 import { useProducts } from "@/contexts/ProductContext";
+import { useUnits } from "@/contexts/UnitsContext";
 
 // Product Image Carousel Component
 function ProductImageCarousel({ images, productId }: { images: string[], productId: string }) {
@@ -79,6 +80,7 @@ function ProductImageCarousel({ images, productId }: { images: string[], product
 export function ProductManagement() {
   const { categories: contextCategories, getSubcategoriesByCategoryId } = useCategories();
   const { products, addProduct, updateProduct, deleteProduct } = useProducts();
+  const { units: managedUnits } = useUnits();
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -333,7 +335,8 @@ export function ProductManagement() {
     const category = contextCategories.find(cat => cat.name === categoryName);
     return category ? category.subcategories : [];
   };
-  const units = ["kg", "bunch", "piece", "dozen", "gram", "liter"];
+  // Units from Unit Management module (fallback to simple symbols if empty)
+  const units = managedUnits.length > 0 ? managedUnits.map(u => u.symbol || u.name) : ["kg", "gram", "liter", "packet", "pcs", "box", "dz"];
 
   const getStatusColor = (status: string) => {
     const colors = {

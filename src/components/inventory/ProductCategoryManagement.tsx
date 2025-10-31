@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { useCategories, Category } from "@/contexts/CategoryContext";
 
@@ -14,6 +15,7 @@ export const ProductCategoryManagement = () => {
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
+  const [viewingCategory, setViewingCategory] = useState<Category | null>(null);
   const [formData, setFormData] = useState({ name: "", description: "", subcategories: [""], color: "green" });
 
   // Reset form to clean state
@@ -120,10 +122,10 @@ export const ProductCategoryManagement = () => {
             <div>
               <CardTitle className="flex items-center gap-2">
                 <Tag className="h-5 w-5 text-primary" />
-                Product Categories
+                Category Management
               </CardTitle>
               <CardDescription>
-                Manage product categories and organize your inventory
+                Manage categories and organize your inventory
               </CardDescription>
             </div>
             
@@ -235,19 +237,24 @@ export const ProductCategoryManagement = () => {
         <CardContent>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {categories.map((category) => (
-              <Card key={category.id} className="hover:shadow-md transition-shadow">
+              <Card key={category.id} className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => setViewingCategory(category)}>
                 <CardContent className="p-4">
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex items-center gap-2">
                       <div className={`w-3 h-3 rounded-full bg-${category.color}-500`} />
                       <h3 className="font-semibold">{category.name}</h3>
                     </div>
-                    <Badge 
-                      variant={category.isActive ? "default" : "secondary"}
-                      className="text-xs"
-                    >
-                      {category.isActive ? "Active" : "Inactive"}
-                    </Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge 
+                        variant={category.isActive ? "default" : "secondary"}
+                        className="text-xs"
+                      >
+                        {category.isActive ? "Active" : "Inactive"}
+                      </Badge>
+                      <span onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                        <Switch checked={category.isActive} onCheckedChange={() => toggleCategoryStatus(category.id)} />
+                      </span>
+                    </div>
                   </div>
                   
                   <p className="text-sm text-muted-foreground mb-3">
@@ -261,20 +268,13 @@ export const ProductCategoryManagement = () => {
                     </Badge>
                   </div>
                   
-                  <div className="flex gap-2">
+                  <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
                     <Button 
                       size="sm" 
                       variant="outline"
                       onClick={() => handleEditCategory(category)}
                     >
                       <Edit className="h-3 w-3" />
-                    </Button>
-                    <Button 
-                      size="sm" 
-                      variant="outline"
-                      onClick={() => toggleCategoryStatus(category.id)}
-                    >
-                      {category.isActive ? "Deactivate" : "Activate"}
                     </Button>
                     <Button
                       size="sm"
@@ -381,6 +381,51 @@ export const ProductCategoryManagement = () => {
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* View Category Dialog */}
+      <Dialog open={!!viewingCategory} onOpenChange={(open) => !open && setViewingCategory(null)}>
+        <DialogContent className="max-w-[540px]">
+          <DialogHeader>
+            <DialogTitle>Category Details</DialogTitle>
+            <DialogDescription>Overview of this category</DialogDescription>
+          </DialogHeader>
+          {viewingCategory && (
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-medium mb-2 block">Category Name</label>
+                <div className="p-3 rounded-md border bg-muted/30 text-sm">{viewingCategory.name}</div>
+              </div>
+              <div>
+                <label className="text-sm font-medium mb-2 block">Description</label>
+                <div className="p-3 rounded-md border bg-muted/30 text-sm">{viewingCategory.description || "—"}</div>
+              </div>
+              <div>
+                <label className="text-sm font-medium mb-2 block">Sub Category</label>
+                {viewingCategory.subcategories.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {viewingCategory.subcategories.map((sub, i) => (
+                      <Badge key={i} variant="secondary">{sub}</Badge>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-3 rounded-md border bg-muted/30 text-sm">No sub categories</div>
+                )}
+              </div>
+              <div>
+                <label className="text-sm font-medium mb-2 block">Color</label>
+                <div className="flex items-center gap-2">
+                  <div className={`w-5 h-5 rounded-full bg-${viewingCategory.color}-500`} />
+                  <span className="text-sm">{viewingCategory.color}</span>
+                </div>
+              </div>
+              <div>
+                <label className="text-sm font-medium mb-2 block">Status</label>
+                <Badge variant={viewingCategory.isActive ? "default" : "secondary"}>{viewingCategory.isActive ? "Active" : "Inactive"}</Badge>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

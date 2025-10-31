@@ -43,7 +43,8 @@ const navigationItems = [
     icon: Package,
     items: [
       { title: 'Products', href: '/inventory/products', icon: Package },
-      { title: 'Categories', href: '/inventory/categories', icon: Package },
+      { title: 'Category Management', href: '/inventory/categories', icon: Package },
+      { title: 'Unit Management', href: '/inventory/units', icon: Package },
       { title: 'Stock Adjustment', href: '/stock-adjustment', icon: BarChart },
       // Temporarily commented out per request — enable later when needed
       // { title: 'Tasks', href: '/inventory/tasks', icon: ClipboardList },

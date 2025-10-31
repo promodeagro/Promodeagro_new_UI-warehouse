@@ -8,6 +8,7 @@ import { ProductProvider } from '@/contexts/ProductContext';
 import { NotificationProvider } from '@/contexts/NotificationContext';
 import { OrderProvider } from '@/contexts/OrderContext';
 import { PincodeProvider } from '@/contexts/PincodeContext';
+import { UnitsProvider } from '@/contexts/UnitsContext';
 
 // Import components
 import { OperationsOverview } from '@/components/warehouse/OperationsOverview';
@@ -17,6 +18,7 @@ import { StockReceiving } from '@/components/inventory/StockReceiving';
 import { QualityCheck } from '@/components/inventory/QualityCheck';
 import { ProductCategoryManagement } from '@/components/inventory/ProductCategoryManagement';
 import { QuickActions } from '@/components/inventory/QuickActions';
+import UnitManagement from '@/components/inventory/UnitManagement';
 import { OrderDelivery } from '@/components/delivery/OrderDelivery';
 import { DeliveryHistory } from '@/components/delivery/DeliveryHistory';
 import RunsheetManagement from '@/components/delivery/RunsheetManagement';
@@ -108,6 +110,7 @@ function App() {
             <NotificationProvider>
               <OrderProvider>
                 <PincodeProvider>
+                <UnitsProvider>
                 <Router>
             <div className="min-h-screen bg-gradient-background flex">
               <Navigation />
@@ -129,6 +132,7 @@ function App() {
                   <Route path="/inventory/receiving" element={<StockReceiving />} />
                   <Route path="/inventory/quality" element={<QualityCheck />} />
                   <Route path="/inventory/categories" element={<ProductCategoryManagement />} />
+                  <Route path="/inventory/units" element={<UnitManagement />} />
                   <Route path="/inventory/quick-actions" element={<QuickActions />} />
                   <Route path="/stock-adjustment" element={<StockAdjustment />} />
                   <Route path="/stock-adjustment/new" element={<NewStockAdjustment />} />
@@ -209,6 +213,7 @@ function App() {
             </div>
                 </Router>
                 <Toaster />
+                </UnitsProvider>
                 </PincodeProvider>
               </OrderProvider>
             </NotificationProvider>
