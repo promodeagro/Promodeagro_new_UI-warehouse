@@ -83,7 +83,7 @@ const RiderManagementDashboard = () => {
 
   return (
     <div className="min-h-screen bg-muted/30">
-      <main className="container mx-auto px-6 py-8">
+      <main className="px-6 py-8">
         {/* Page header (no white background container) */}
         <div className="flex items-center justify-between mb-6">
           <div>

@@ -18,27 +18,7 @@ import { StockReceiving } from '@/components/inventory/StockReceiving';
 import { QualityCheck } from '@/components/inventory/QualityCheck';
 import { ProductCategoryManagement } from '@/components/inventory/ProductCategoryManagement';
 import { QuickActions } from '@/components/inventory/QuickActions';
-<<<<<<< HEAD
 import UnitManagement from '@/components/inventory/UnitManagement';
-import { OrderDelivery } from '@/components/delivery/OrderDelivery';
-import { DeliveryHistory } from '@/components/delivery/DeliveryHistory';
-import RunsheetManagement from '@/components/delivery/RunsheetManagement';
-import DeliveryAnalytics from '@/components/delivery/DeliveryAnalytics';
-import RiderPortal from '@/components/delivery/RiderPortal';
-import RiderManagementDashboard from '@/components/delivery/RiderManagementDashboard';
-import EnhancedRiderOverview from '@/components/delivery/EnhancedRiderOverview';
-import CashCollectionManagement from '@/components/delivery/CashCollectionManagement';
-import CashVerificationDetails from '@/components/delivery/CashVerificationDetails';
-import CollectionDetailsView from '@/components/delivery/CollectionDetailsView';
-import DeliveryAction from '@/components/delivery/DeliveryAction';
-import RiderOnboardingQueue from '@/components/delivery/RiderOnboardingQueue';
-import RiderOnboarding from '@/components/delivery/RiderOnboarding';
-import RiderOnboardingReview from '@/components/delivery/RiderOnboardingReview';
-import RiderRunsheets from '@/components/delivery/RiderRunsheets';
-import RunsheetDetails from '@/components/delivery/RunsheetDetails';
-import CreateRunsheet from '@/components/delivery/CreateRunsheet';
-=======
->>>>>>> 1cf58843 (Rider module changes are working)
 import { FleetManagement } from '@/components/logistics/FleetManagement';
 import { RouteOptimization } from '@/components/logistics/RouteOptimization';
 import { DeliveryTracking } from '@/components/logistics/DeliveryTracking';
