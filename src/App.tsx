@@ -13,6 +13,7 @@ import { UnitsProvider } from '@/contexts/UnitsContext';
 // Import components
 import { OperationsOverview } from '@/components/warehouse/OperationsOverview';
 import { ProductManagement } from '@/components/inventory/ProductManagement';
+import { ProductVariants } from '@/components/inventory/ProductVariants';
 import { InventoryTasks } from '@/components/inventory/InventoryTasks';
 import { StockReceiving } from '@/components/inventory/StockReceiving';
 import { QualityCheck } from '@/components/inventory/QualityCheck';
@@ -125,6 +126,7 @@ function App() {
                   
                   {/* Inventory Management */}
                   <Route path="/inventory/products" element={<ProductManagement />} />
+                  <Route path="/inventory/variants" element={<ProductVariants />} />
                   <Route path="/inventory/tasks" element={<InventoryTasks />} />
                   <Route path="/inventory/receiving" element={<StockReceiving />} />
                   <Route path="/inventory/quality" element={<QualityCheck />} />
