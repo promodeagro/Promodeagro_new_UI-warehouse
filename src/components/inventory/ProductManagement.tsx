@@ -1,8 +1,10 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Package, Plus, Edit, Trash2, Search, Filter, Upload, Eye, AlertTriangle, CheckCircle, X, ChevronLeft, ChevronRight } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -78,15 +80,19 @@ function ProductImageCarousel({ images, productId }: { images: string[], product
 }
 
 export function ProductManagement() {
+  const navigate = useNavigate();
   const { categories: contextCategories, getSubcategoriesByCategoryId } = useCategories();
   const { products, addProduct, updateProduct, deleteProduct } = useProducts();
   const { units: managedUnits } = useUnits();
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
+  const [subCategoryFilter, setSubCategoryFilter] = useState("all");
+  const [b2cStatusFilter, setB2cStatusFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [viewingProduct, setViewingProduct] = useState<any>(null);
+  const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
 
   // Formats product name into up to two segments: 30 characters first line, 20 characters second line
   const splitProductName = (name: string): { first: string; second: string; ellipsis: boolean } => {
@@ -119,6 +125,7 @@ export function ProductManagement() {
       salePrice: "",
       comparePrice: "",
       expiryDate: "",
+      stockMode: "",
     });
     setTagDraft("");
     setDescriptionWordCount(0);
@@ -154,6 +161,7 @@ export function ProductManagement() {
     salePrice: "",
     comparePrice: "",
     expiryDate: "",
+    stockMode: "",
   });
 
   const [tagDraft, setTagDraft] = useState("");
@@ -245,6 +253,7 @@ export function ProductManagement() {
       salePrice: product.price?.toString() || "",
       comparePrice: product.comparePrice?.toString() || "",
       expiryDate: product.expiryDate || "",
+      stockMode: (product as any).stockMode || "",
     });
 
     // Pre-fill images
@@ -269,9 +278,9 @@ export function ProductManagement() {
         purchasePrice: (variant as any).purchasePrice?.toString() || "",
         salePrice: variant.price?.toString() || "",
         comparePrice: (variant as any).comparePrice?.toString() || "",
-        b2cQty: variant.stock?.toString() || "",
-        b2cUnit: variant.unit || "",
-        lowStockAlert: variant.minStock?.toString() || "",
+        b2cQty: (variant as any).b2cQty?.toString() || variant.stock?.toString() || "",
+        b2cUnit: (variant as any).b2cUnit || variant.unit || "",
+        lowStockAlert: (variant as any).lowStockAlert?.toString() || variant.minStock?.toString() || "",
         expiryDate: (variant as any).expiryDate || "",
         publishToB2C: variant.onB2C || false,
         images: variant.images ? variant.images.map((url: string) => ({
@@ -294,9 +303,133 @@ export function ProductManagement() {
     setIsViewDialogOpen(true);
   };
 
-  const updateVariant = (index: number, field: keyof Variant, value: any) => {
-    setVariants(variants.map((v, i) => (i === index ? { ...v, [field]: value } : v)));
+  // Helper function to convert variant sell unit to parent unit for price calculation
+  const convertVariantUnitToParent = (variantQty: string, variantUnit: string, parentUnit: string): number => {
+    const qty = parseFloat(variantQty) || 0;
+    if (!qty || !variantUnit || !parentUnit) return 0;
+
+    // Weight conversions (convert to kg)
+    const weightConversions: Record<string, number> = {
+      'kg': 1,
+      'gram': 0.001,
+      'g': 0.001,
+    };
+
+    // Volume conversions (convert to liter)
+    const volumeConversions: Record<string, number> = {
+      'liter': 1,
+      'l': 1,
+      'ml': 0.001,
+    };
+
+    // If units are the same, return as-is
+    if (variantUnit.toLowerCase() === parentUnit.toLowerCase()) {
+      return qty;
+    }
+
+    // Try weight conversions
+    if (weightConversions[variantUnit.toLowerCase()] && weightConversions[parentUnit.toLowerCase()]) {
+      const variantInKg = qty * weightConversions[variantUnit.toLowerCase()];
+      return variantInKg / weightConversions[parentUnit.toLowerCase()];
+    }
+
+    // Try volume conversions
+    if (volumeConversions[variantUnit.toLowerCase()] && volumeConversions[parentUnit.toLowerCase()]) {
+      const variantInLiter = qty * volumeConversions[variantUnit.toLowerCase()];
+      return variantInLiter / volumeConversions[parentUnit.toLowerCase()];
+    }
+
+    // For discrete units (packet, pieces, box, dozen), treat as 1:1 ratio if same type
+    // Otherwise return 0 (cannot convert)
+    if (variantUnit.toLowerCase() === parentUnit.toLowerCase()) {
+      return qty;
+    }
+
+    // Default: return qty as-is (assume same unit)
+    return qty;
   };
+
+  const updateVariant = (index: number, field: keyof Variant, value: any) => {
+    const updatedVariants = variants.map((v, i) => {
+      if (i === index) {
+        const updated = { ...v, [field]: value };
+        
+        // Auto-calculate purchasing price and selling price when stock mode is "parent"
+        // Only recalculate when sell unit (b2cQty or b2cUnit) changes, not when user edits prices
+        if (newProduct.stockMode === "parent" && (field === 'b2cQty' || field === 'b2cUnit')) {
+          const parentPurchasePrice = parseFloat(newProduct.purchasePrice || "0");
+          const parentSalePrice = parseFloat(newProduct.salePrice || "0");
+          const parentUnit = newProduct.unit || "kg";
+          
+          const variantB2cQty = updated.b2cQty || "";
+          const variantB2cUnit = updated.b2cUnit || "";
+          
+          if (variantB2cQty && variantB2cUnit && parentPurchasePrice > 0) {
+            // Convert variant sell unit to parent unit
+            const variantQtyInParentUnit = convertVariantUnitToParent(variantB2cQty, variantB2cUnit, parentUnit);
+            
+            // Calculate price per variant unit based on parent price per unit
+            // Parent price is per parent unit, so: variant price = (parent price / parent unit) * variant quantity in parent unit
+            // But actually, if parent is 20rs/kg and variant is 500g (0.5kg), then variant price = 20 * 0.5 = 10rs
+            const variantPurchasePrice = parentPurchasePrice * variantQtyInParentUnit;
+            const variantSalePrice = parentSalePrice > 0 ? parentSalePrice * variantQtyInParentUnit : 0;
+            
+            // Always update purchasing price (read-only)
+            updated.purchasePrice = variantPurchasePrice.toFixed(2);
+            // Only auto-calculate sale price if parent has a sale price, otherwise keep user's manual value
+            if (parentSalePrice > 0) {
+              updated.salePrice = variantSalePrice.toFixed(2);
+            }
+          }
+        }
+        
+        return updated;
+      }
+      return v;
+    });
+    
+    setVariants(updatedVariants);
+  };
+
+  // Recalculate variant prices when parent prices, unit, or stock mode changes
+  // Note: This only recalculates when parent values change, not when user manually edits variant prices
+  useEffect(() => {
+    if (newProduct.stockMode === "parent" && variants.length > 0) {
+      const parentPurchasePrice = parseFloat(newProduct.purchasePrice || "0");
+      const parentSalePrice = parseFloat(newProduct.salePrice || "0");
+      const parentUnit = newProduct.unit || "kg";
+
+      setVariants(prevVariants => {
+        const updatedVariants = prevVariants.map(v => {
+          const variantB2cQty = v.b2cQty || "";
+          const variantB2cUnit = v.b2cUnit || "";
+
+          if (variantB2cQty && variantB2cUnit && parentPurchasePrice > 0) {
+            // Convert variant sell unit to parent unit
+            const variantQtyInParentUnit = convertVariantUnitToParent(variantB2cQty, variantB2cUnit, parentUnit);
+
+            // Calculate prices
+            const variantPurchasePrice = parentPurchasePrice * variantQtyInParentUnit;
+            // Calculate suggested sale price, but don't override if user has manually edited it
+            const suggestedSalePrice = parentSalePrice > 0 ? parentSalePrice * variantQtyInParentUnit : 0;
+
+            return {
+              ...v,
+              purchasePrice: variantPurchasePrice.toFixed(2),
+              // Only update sale price if it hasn't been manually edited (check if it matches the calculated value)
+              // For now, we'll recalculate when parent price changes, but user can edit it after
+              salePrice: parentSalePrice > 0 ? suggestedSalePrice.toFixed(2) : v.salePrice
+            };
+          }
+
+          return v;
+        });
+
+        return updatedVariants;
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newProduct.purchasePrice, newProduct.salePrice, newProduct.unit, newProduct.stockMode]);
 
   const addVariantImages = (index: number, files: File[]) => {
     const allowed = files.filter(f => /image\/(jpeg|png|svg\+xml)/i.test(f.type));
@@ -338,14 +471,78 @@ export function ProductManagement() {
   // Units from Unit Management module (fallback to simple symbols if empty)
   const units = managedUnits.length > 0 ? managedUnits.map(u => u.symbol || u.name) : ["kg", "gram", "liter", "packet", "pcs", "box", "dz"];
 
-  const getStatusColor = (status: string) => {
+  // Helper function to calculate B2C Status (active or inactive)
+  const getB2CStatus = (onB2C: boolean): string => {
+    return onB2C ? "active" : "inactive";
+  };
+
+  // Helper function to calculate Product Status (in stock, out of stock, low stock)
+  const getProductStatus = (stock: number, lowStockAlert: number | string = 0): string => {
+    const stockValue = typeof stock === 'number' ? stock : parseInt(stock?.toString() || "0");
+    const lowStockValue = typeof lowStockAlert === 'number' ? lowStockAlert : parseInt(lowStockAlert?.toString() || "0");
+    
+    // If stock is zero, status is "out-of-stock"
+    if (stockValue === 0) {
+      return "out-of-stock";
+    }
+    
+    // If stock is greater than zero but less than or equal to low stock alert, status is "low-stock"
+    if (lowStockValue > 0 && stockValue <= lowStockValue) {
+      return "low-stock";
+    }
+    
+    // If stock is greater than zero and greater than low stock alert, status is "in-stock"
+    if (stockValue > 0) {
+      return "in-stock";
+    }
+    
+    // Default fallback
+    return "in-stock";
+  };
+
+  // Legacy function for backward compatibility (combines both statuses)
+  const calculateStatus = (stock: number, onB2C: boolean, lowStockAlert: number | string = 0): string => {
+    // For legacy compatibility, return product status
+    return getProductStatus(stock, lowStockAlert);
+  };
+
+  // Helper function to get color for Product Status
+  const getProductStatusColor = (status: string) => {
+    const colors = {
+      "in-stock": "bg-blue-500/10 text-blue-500",
+      "low-stock": "bg-yellow-500/10 text-yellow-500",
+      "out-of-stock": "bg-red-500/10 text-red-500",
+    };
+    return colors[status as keyof typeof colors] || colors["in-stock"];
+  };
+
+  // Helper function to get color for B2C Status
+  const getB2CStatusColor = (status: string) => {
     const colors = {
       "active": "bg-green-500/10 text-green-500",
+      "inactive": "bg-gray-500/10 text-gray-500",
+    };
+    return colors[status as keyof typeof colors] || colors["inactive"];
+  };
+
+  // Legacy function for backward compatibility
+  const getStatusColor = (status: string) => {
+    // Try product status first, then B2C status, then legacy
+    if (status === "in-stock" || status === "low-stock" || status === "out-of-stock") {
+      return getProductStatusColor(status);
+    }
+    if (status === "active" || status === "inactive") {
+      return getB2CStatusColor(status);
+    }
+    const colors = {
+      "active": "bg-green-500/10 text-green-500",
+      "inactive": "bg-gray-500/10 text-gray-500",
+      "in-stock": "bg-blue-500/10 text-blue-500",
       "low-stock": "bg-yellow-500/10 text-yellow-500",
       "out-of-stock": "bg-red-500/10 text-red-500",
       "discontinued": "bg-gray-500/10 text-gray-500"
     };
-    return colors[status as keyof typeof colors];
+    return colors[status as keyof typeof colors] || colors["active"];
   };
 
   const getQualityColor = (quality: string) => {
@@ -360,6 +557,40 @@ export function ProductManagement() {
   };
 
   const handleAddProduct = () => {
+    // Validate required fields and collect missing ones
+    const missingFields: string[] = [];
+    
+    if (!newProduct.name || newProduct.name.trim() === "") {
+      missingFields.push("Product Name");
+    }
+    if (!newProduct.category || newProduct.category.trim() === "") {
+      missingFields.push("Category");
+    }
+    if (!newProduct.subCategory || newProduct.subCategory.trim() === "") {
+      missingFields.push("Sub Category");
+    }
+    if (!newProduct.stockMode || newProduct.stockMode.trim() === "") {
+      missingFields.push("Stock Mode");
+    }
+    if (!newProduct.b2cQty || newProduct.b2cQty.trim() === "") {
+      missingFields.push("Sell Unit in B2C (Quantity)");
+    }
+    if (!newProduct.b2cUnit || newProduct.b2cUnit.trim() === "") {
+      missingFields.push("Sell Unit in B2C (Unit)");
+    }
+    if (images.length === 0) {
+      missingFields.push("Product Images");
+    }
+    
+    if (missingFields.length > 0) {
+      toast({
+        title: "Error",
+        description: `Please fill in the following required fields: ${missingFields.join(", ")}.`,
+        variant: "destructive"
+      });
+      return;
+    }
+
     if (isEditMode && editingProduct) {
       // Update existing product
       const updatedProduct = {
@@ -383,9 +614,13 @@ export function ProductManagement() {
         salePrice: newProduct.salePrice || "0",
         comparePrice: newProduct.comparePrice || "0",
         expiryDate: newProduct.expiryDate || "",
+        stockMode: newProduct.stockMode || "",
         onB2C: newProduct.onB2C,
-        status: parseInt(newProduct.stock || "0") === 0 ? "out-of-stock" :
-                parseInt(newProduct.stock || "0") <= parseInt(newProduct.lowStockAlert || "0") ? "low-stock" : "active",
+        // Store product status (in-stock, low-stock, out-of-stock)
+        status: getProductStatus(
+          parseInt(newProduct.stock || "0"),
+          newProduct.lowStockAlert || "0"
+        ),
         lastUpdated: new Date().toISOString().split('T')[0]
       };
 
@@ -402,8 +637,11 @@ export function ProductManagement() {
         b2cUnit: variant.b2cUnit || "kg",
         minStock: parseInt(variant.lowStockAlert || "0"),
         maxStock: 1000,
-        status: (parseInt(variant.qty || "0") === 0 ? "out-of-stock" :
-                parseInt(variant.qty || "0") <= parseInt(variant.lowStockAlert || "0") ? "low-stock" : "active") as "active" | "low-stock" | "out-of-stock",
+        status: calculateStatus(
+          parseInt(variant.qty || "0"),
+          variant.publishToB2C,
+          variant.lowStockAlert || "0"
+        ),
         images: variant.images.map(img => img.url),
         unit: variant.unit || "kg",
         supplier: newProduct.supplier,
@@ -415,6 +653,11 @@ export function ProductManagement() {
         onB2C: variant.publishToB2C,
         isVariant: true,
         parentProductId: editingProduct.id,
+        // Store product status (in-stock, low-stock, out-of-stock)
+        status: getProductStatus(
+          parseInt(variant.qty || "0"),
+          variant.lowStockAlert || "0"
+        ),
         lastUpdated: new Date().toISOString().split('T')[0]
       }));
 
@@ -444,8 +687,11 @@ export function ProductManagement() {
         stock: parseInt(newProduct.stock || "0"),
         minStock: parseInt(newProduct.lowStockAlert || "0"),
         maxStock: parseInt(newProduct.maxStock || "1000"),
-        status: parseInt(newProduct.stock || "0") === 0 ? "out-of-stock" : 
-                parseInt(newProduct.stock || "0") <= parseInt(newProduct.lowStockAlert || "0") ? "low-stock" : "active",
+        // Store product status (in-stock, low-stock, out-of-stock)
+        status: getProductStatus(
+          parseInt(newProduct.stock || "0"),
+          newProduct.lowStockAlert || "0"
+        ),
       quality: "good",
       image: "/api/placeholder/100/100",
         lastUpdated: new Date().toISOString().split('T')[0],
@@ -461,6 +707,7 @@ export function ProductManagement() {
         salePrice: newProduct.salePrice || "0",
         comparePrice: newProduct.comparePrice || "0",
         expiryDate: newProduct.expiryDate || "",
+        stockMode: newProduct.stockMode || "",
         onB2C: newProduct.onB2C
       };
       
@@ -480,8 +727,11 @@ export function ProductManagement() {
           b2cUnit: variant.b2cUnit || "kg",
           minStock: parseInt(variant.lowStockAlert || "0"),
           maxStock: 1000,
-          status: (parseInt(variant.qty || "0") === 0 ? "out-of-stock" : 
-                  parseInt(variant.qty || "0") <= parseInt(variant.lowStockAlert || "0") ? "low-stock" : "active") as "active" | "low-stock" | "out-of-stock",
+          // Store product status (in-stock, low-stock, out-of-stock)
+          status: getProductStatus(
+            parseInt(variant.qty || "0"),
+            variant.lowStockAlert || "0"
+          ),
           quality: "good",
           image: "/api/placeholder/100/100",
           lastUpdated: new Date().toISOString().split('T')[0],
@@ -519,12 +769,24 @@ export function ProductManagement() {
   };
 
   const handleUpdateProduct = (productId: string, updates: any) => {
-    updateProduct(productId, {
+    const product = products.find(p => p.id === productId);
+    if (product) {
+      // Calculate product status based on stock (not B2C status)
+      const newProductStatus = getProductStatus(
+        updates.stock !== undefined ? updates.stock : product.stock || 0,
+        updates.minStock !== undefined ? updates.minStock : product.minStock || (product as any).lowStockAlert || 0
+      );
+      updateProduct(productId, {
             ...updates, 
             lastUpdated: new Date().toISOString().split('T')[0],
-            status: updates.stock === 0 ? "out-of-stock" : 
-             updates.stock <= (updates.minStock || products.find(p => p.id === productId)?.minStock || 0) ? "low-stock" : "active"
-    });
+            status: newProductStatus
+      });
+    } else {
+      updateProduct(productId, {
+            ...updates, 
+            lastUpdated: new Date().toISOString().split('T')[0]
+      });
+    }
     
     toast({
       title: "Product Updated",
@@ -541,13 +803,18 @@ export function ProductManagement() {
   };
 
   const toggleB2CStatus = (productId: string, currentStatus: boolean) => {
-    updateProduct(productId, { onB2C: !currentStatus });
-    toast({
-      title: currentStatus ? "Product Hidden from B2C" : "Product Published to B2C",
-      description: currentStatus ? 
-        "Product is no longer visible to customers." : 
-        "Product is now live on customer portal.",
-    });
+    const product = products.find(p => p.id === productId);
+    if (product) {
+      const newB2CStatus = !currentStatus;
+      // Update only B2C status, product status remains the same (based on stock)
+      updateProduct(productId, { onB2C: newB2CStatus });
+      toast({
+        title: currentStatus ? "Product Hidden from B2C" : "Product Published to B2C",
+        description: currentStatus ? 
+          "Product is no longer visible to customers." : 
+          "Product is now live on customer portal.",
+      });
+    }
   };
 
   // Show ONLY parent products in the grid (hide variant cards)
@@ -561,8 +828,12 @@ export function ProductManagement() {
       product.id.toLowerCase().includes(term) ||
       (Array.isArray(tags) && tags.some((t: string) => (t || "").toLowerCase().includes(term)));
     const matchesCategory = categoryFilter === "all" || product.category === categoryFilter;
+    const matchesSubCategory = subCategoryFilter === "all" || product.subCategory === subCategoryFilter || (product as any).subcategory === subCategoryFilter;
+    const matchesB2CStatus = b2cStatusFilter === "all" || 
+      (b2cStatusFilter === "active" && product.onB2C) ||
+      (b2cStatusFilter === "inactive" && !product.onB2C);
     const matchesStatus = statusFilter === "all" || product.status === statusFilter;
-    return matchesSearch && matchesCategory && matchesStatus;
+    return matchesSearch && matchesCategory && matchesSubCategory && matchesB2CStatus && matchesStatus;
   });
 
   return (
@@ -580,7 +851,14 @@ export function ProductManagement() {
                 Manage inventory products that sync live to B2C portal
               </CardDescription>
             </div>
-            <Dialog open={isAddDialogOpen} onOpenChange={(open) => {
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={() => navigate("/inventory/variants")}
+              >
+                View All Variants
+              </Button>
+              <Dialog open={isAddDialogOpen} onOpenChange={(open) => {
               setIsAddDialogOpen(open);
               if (!open) {
                 resetForm();
@@ -600,19 +878,52 @@ export function ProductManagement() {
                   </DialogDescription>
                 </DialogHeader>
                   <div className="space-y-6 py-4">
+                      {/* Row 1: Product Name + Stock Mode */}
                       <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-2">
-                      <Label htmlFor="name">Product Name *</Label>
+                      <Label htmlFor="name">Product Name <span className="text-red-500">*</span></Label>
                       <Input
                         id="name"
                         value={newProduct.name}
                         onChange={(e) => setNewProduct({...newProduct, name: e.target.value})}
                         placeholder="Enter product name"
                         className="w-full placeholder:text-muted-foreground"
+                        required
+                        autoFocus={false}
+                        onFocus={(e) => {
+                          // Prevent auto-select when editing
+                          if (isEditMode) {
+                            // Use setTimeout to place cursor at end after focus
+                            setTimeout(() => {
+                              const length = e.target.value.length;
+                              e.target.setSelectionRange(length, length);
+                            }, 0);
+                          }
+                        }}
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="category">Category *</Label>
+                      <Label htmlFor="stockMode">Stock Mode <span className="text-red-500">*</span></Label>
+                      <Select
+                        value={newProduct.stockMode}
+                        onValueChange={(value) => setNewProduct({ ...newProduct, stockMode: value })}
+                        required
+                      >
+                        <SelectTrigger id="stockMode" className="w-full">
+                          <SelectValue placeholder="Select stock mode" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="parent">Parent</SelectItem>
+                          <SelectItem value="variant">Variant</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  {/* Row 2: Category + Sub Category */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="category">Category <span className="text-red-500">*</span></Label>
                           <Select value={newProduct.category} onValueChange={(value) => setNewProduct({...newProduct, category: value, subCategory: ""})}>
                             <SelectTrigger className="w-full">
                           <SelectValue placeholder="Select category" />
@@ -624,17 +935,13 @@ export function ProductManagement() {
                         </SelectContent>
                       </Select>
                     </div>
-                  </div>
-
-                  {/* Sub Category + Overall Stock + Quantity In B2C (one row with three groups) */}
-                  <div className="grid grid-cols-3 gap-3">
-                    {/* Sub Category */}
                     <div className="space-y-2">
-                      <Label htmlFor="subCategory">Sub Category *</Label>
+                      <Label htmlFor="subCategory">Sub Category <span className="text-red-500">*</span></Label>
                       <Select
                         value={newProduct.subCategory}
                         onValueChange={(value) => setNewProduct({ ...newProduct, subCategory: value })}
                         disabled={!newProduct.category}
+                        required
                       >
                         <SelectTrigger id="subCategory" className="w-full">
                           <SelectValue placeholder="Select sub category" />
@@ -646,10 +953,13 @@ export function ProductManagement() {
                         </SelectContent>
                       </Select>
                     </div>
+                  </div>
 
-                    {/* Overall Stock with unit */}
+                  {/* Row 3: Opening Stock + Sell Unit in B2C */}
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* Opening Stock / Overall Stock with unit */}
                     <div className="space-y-2">
-                      <Label htmlFor="stockQty">Overall Stock</Label>
+                      <Label htmlFor="stockQty">{isEditMode ? "Overall Stock" : "Opening Stock"}</Label>
                       <div className="grid grid-cols-3 gap-2">
                       <Input
                           id="stockQty"
@@ -657,8 +967,14 @@ export function ProductManagement() {
                           onChange={(e) => setNewProduct({ ...newProduct, stock: e.target.value })}
                           placeholder="0"
                           className="col-span-2 w-full placeholder:text-muted-foreground"
+                          disabled={newProduct.stockMode === "variant" || isEditMode}
+                          readOnly={isEditMode}
                         />
-                        <Select value={newProduct.unit} onValueChange={(value) => setNewProduct({ ...newProduct, unit: value })}>
+                        <Select 
+                          value={newProduct.unit} 
+                          onValueChange={(value) => setNewProduct({ ...newProduct, unit: value })} 
+                          disabled={newProduct.stockMode === "variant" || isEditMode}
+                        >
                           <SelectTrigger id="stockUnit" className="w-full">
                             <SelectValue placeholder="Unit" />
                           </SelectTrigger>
@@ -671,9 +987,9 @@ export function ProductManagement() {
                     </div>
                     </div>
 
-                    {/* Quantity In B2C with unit */}
+                    {/* Sell Unit in B2C with unit */}
                     <div className="space-y-2">
-                      <Label htmlFor="b2cQty">Quantity In B2C</Label>
+                      <Label htmlFor="b2cQty">Sell Unit in B2C <span className="text-red-500">*</span></Label>
                       <div className="grid grid-cols-3 gap-2">
                         <Input
                           id="b2cQty"
@@ -681,8 +997,9 @@ export function ProductManagement() {
                           onChange={(e) => setNewProduct({ ...newProduct, b2cQty: e.target.value })}
                           placeholder="0"
                           className="col-span-2 w-full placeholder:text-muted-foreground"
+                          required
                         />
-                        <Select value={newProduct.b2cUnit} onValueChange={(value) => setNewProduct({ ...newProduct, b2cUnit: value })}>
+                        <Select value={newProduct.b2cUnit} onValueChange={(value) => setNewProduct({ ...newProduct, b2cUnit: value })} required>
                           <SelectTrigger id="b2cUnit" className="w-full">
                             <SelectValue placeholder="Unit" />
                         </SelectTrigger>
@@ -760,7 +1077,7 @@ export function ProductManagement() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label>Product Images (Max 4)</Label>
+                    <Label>Product Images (Max 4) <span className="text-red-500">*</span></Label>
                     <div
                       className="border-2 border-dashed border-card-border rounded-lg p-8 text-center text-muted-foreground cursor-pointer select-none"
                       onClick={() => fileInputRef.current?.click()}
@@ -812,17 +1129,19 @@ export function ProductManagement() {
 
                       <div className="grid grid-cols-3 gap-3">
                         <div className="space-y-2">
-                          <Label htmlFor="purchasePrice">Purchasing Price (₹) *</Label>
+                          <Label htmlFor="purchasePrice">Purchasing Price (₹)</Label>
                       <Input
                             id="purchasePrice"
                             value={newProduct.purchasePrice}
                             onChange={(e) => setNewProduct({...newProduct, purchasePrice: e.target.value})}
                             placeholder="0.00"
                             className="w-full placeholder:text-muted-foreground"
+                            disabled={isEditMode}
+                            readOnly={isEditMode}
                       />
                     </div>
                     <div className="space-y-2">
-                          <Label htmlFor="salePrice">Sale Price (₹) *</Label>
+                          <Label htmlFor="salePrice">Sale Price (₹)</Label>
                       <Input
                             id="salePrice"
                             value={newProduct.salePrice}
@@ -843,8 +1162,8 @@ export function ProductManagement() {
                     </div>
                   </div>
 
-                      {/* Low Stock Alert + Expiry Date + Supplier before Variants */}
-                      <div className="grid grid-cols-3 gap-3">
+                      {/* Low Stock Alert + Expiry Date before Variants */}
+                      <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
                           <Label htmlFor="lowStockAlertMain">Low Stock Alert</Label>
                           <Input id="lowStockAlertMain" value={newProduct.lowStockAlert} onChange={(e) => setNewProduct({ ...newProduct, lowStockAlert: e.target.value })} placeholder="Enter minimum threshold" className="w-full placeholder:text-muted-foreground" />
@@ -852,10 +1171,6 @@ export function ProductManagement() {
                         <div className="space-y-2">
                           <Label htmlFor="expiryDateMain">Expiry Date</Label>
                           <Input id="expiryDateMain" type="date" value={newProduct.expiryDate} onChange={(e) => setNewProduct({ ...newProduct, expiryDate: e.target.value })} className="w-full" />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="supplierMain">Supplier Name</Label>
-                          <Input id="supplierMain" value={newProduct.supplier} onChange={(e) => setNewProduct({ ...newProduct, supplier: e.target.value })} placeholder="Enter supplier name" className="w-full placeholder:text-muted-foreground" />
                         </div>
                   </div>
 
@@ -895,27 +1210,53 @@ export function ProductManagement() {
                               </div>
                               <div className="space-y-3">
                                 <div className="space-y-2">
-                                  <Label>Variant Name</Label>
+                                  <Label>Variant Name <span className="text-red-500">*</span></Label>
                                   <Input 
                                     value={v.name} 
                                     onChange={(e) => updateVariant(idx, 'name', e.target.value)} 
                                     placeholder="Product Variant"
                                     className="w-full placeholder:text-muted-foreground"
+                                    required
                                   />
                                 </div>
                                 <div className="grid grid-cols-3 gap-2">
                                   <div className="col-span-2 space-y-2">
-                                    <Label>Overall Stock</Label>
+                                    <Label>Opening Stock</Label>
                                     <Input 
                                       value={v.qty} 
                                       onChange={(e) => updateVariant(idx, 'qty', e.target.value)} 
                                       placeholder="Enter quantity" 
                                       className="placeholder:text-gray-400 placeholder:font-normal" 
+                                      disabled={newProduct.stockMode === "parent"}
                                     />
                                   </div>
                                   <div className="space-y-2">
                                     <Label>Unit</Label>
-                                    <Select value={v.unit} onValueChange={(val) => updateVariant(idx, 'unit', val)}>
+                                    <Select value={v.unit} onValueChange={(val) => updateVariant(idx, 'unit', val)} disabled={newProduct.stockMode === "parent"}>
+                                      <SelectTrigger>
+                                        <SelectValue placeholder="Unit" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {units.map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                </div>
+
+                                <div className="grid grid-cols-3 gap-2">
+                                  <div className="col-span-2 space-y-2">
+                                    <Label>Sell Unit in B2C <span className="text-red-500">*</span></Label>
+                                    <Input 
+                                      value={v.b2cQty} 
+                                      onChange={(e) => updateVariant(idx, 'b2cQty', e.target.value)} 
+                                      placeholder="Enter B2C quantity" 
+                                      className="placeholder:text-gray-400 placeholder:font-normal" 
+                                      required
+                                    />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label>Unit</Label>
+                                    <Select value={v.b2cUnit} onValueChange={(val) => updateVariant(idx, 'b2cUnit', val)} required>
                                       <SelectTrigger>
                                         <SelectValue placeholder="Unit" />
                                       </SelectTrigger>
@@ -929,11 +1270,23 @@ export function ProductManagement() {
                                 <div className="grid grid-cols-2 gap-2">
                                   <div className="space-y-2">
                                     <Label>Purchasing Price (₹)</Label>
-                                    <Input value={v.purchasePrice} onChange={(e) => updateVariant(idx, 'purchasePrice', e.target.value)} placeholder="0.00" className="placeholder:text-muted-foreground" />
+                                    <Input 
+                                      value={v.purchasePrice} 
+                                      onChange={(e) => updateVariant(idx, 'purchasePrice', e.target.value)} 
+                                      placeholder="0.00" 
+                                      className="placeholder:text-muted-foreground" 
+                                      disabled={newProduct.stockMode === "parent"}
+                                      readOnly={newProduct.stockMode === "parent"}
+                                    />
                                   </div>
                                   <div className="space-y-2">
                                     <Label>Sale Price (₹)</Label>
-                                    <Input value={v.salePrice} onChange={(e) => updateVariant(idx, 'salePrice', e.target.value)} placeholder="0.00" className="placeholder:text-muted-foreground" />
+                                    <Input 
+                                      value={v.salePrice} 
+                                      onChange={(e) => updateVariant(idx, 'salePrice', e.target.value)} 
+                                      placeholder="0.00" 
+                                      className="placeholder:text-muted-foreground" 
+                                    />
                                   </div>
                                 </div>
 
@@ -942,38 +1295,19 @@ export function ProductManagement() {
                                   <Input value={v.comparePrice} onChange={(e) => updateVariant(idx, 'comparePrice', e.target.value)} placeholder="0.00" className="placeholder:text-muted-foreground" />
                                 </div>
 
-                                <div className="grid grid-cols-3 gap-2">
-                                  <div className="col-span-2 space-y-2">
-                                    <Label>Quantity In B2C</Label>
-                                    <Input 
-                                      value={v.b2cQty} 
-                                      onChange={(e) => updateVariant(idx, 'b2cQty', e.target.value)} 
-                                      placeholder="Enter B2C quantity" 
-                                      className="placeholder:text-gray-400 placeholder:font-normal" 
-                                    />
-                                  </div>
-                                  <div className="space-y-2">
-                                    <Label>Unit</Label>
-                                    <Select value={v.b2cUnit} onValueChange={(val) => updateVariant(idx, 'b2cUnit', val)}>
-                                      <SelectTrigger>
-                                        <SelectValue placeholder="Unit" />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        {units.map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-                                </div>
+                                {newProduct.stockMode !== "parent" && (
+                                  <>
+                                    <div className="space-y-2">
+                                      <Label>Low Stock Alert</Label>
+                                      <Input value={v.lowStockAlert} onChange={(e) => updateVariant(idx, 'lowStockAlert', e.target.value)} placeholder="Enter minimum threshold" className="placeholder:text-muted-foreground" />
+                                    </div>
 
-                                <div className="space-y-2">
-                                  <Label>Low Stock Alert</Label>
-                                  <Input value={v.lowStockAlert} onChange={(e) => updateVariant(idx, 'lowStockAlert', e.target.value)} placeholder="Enter minimum threshold" className="placeholder:text-muted-foreground" />
-                                </div>
-
-                                <div className="space-y-2">
-                                  <Label>Expiry Date</Label>
-                                  <Input type="date" value={v.expiryDate} onChange={(e) => updateVariant(idx, 'expiryDate', e.target.value)} />
-                                </div>
+                                    <div className="space-y-2">
+                                      <Label>Expiry Date</Label>
+                                      <Input type="date" value={v.expiryDate} onChange={(e) => updateVariant(idx, 'expiryDate', e.target.value)} />
+                                    </div>
+                                  </>
+                                )}
 
                                 <div className="flex items-center justify-between">
                                   <Label>Publish to B2C Portal</Label>
@@ -1046,15 +1380,33 @@ export function ProductManagement() {
                 </div>
               </DialogContent>
             </Dialog>
+            </div>
 
             {/* View Details Dialog */}
             <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
               <DialogContent className="w-[992px] max-w-[992px] h-[614px] overflow-y-auto">
                 <DialogHeader>
-                  <DialogTitle>View Product Details</DialogTitle>
-                  <DialogDescription>
-                    View product information and variants
-                  </DialogDescription>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <DialogTitle>View Product Details</DialogTitle>
+                      <DialogDescription>
+                        View product information and variants
+                      </DialogDescription>
+                    </div>
+                    {viewingProduct && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setIsViewDialogOpen(false);
+                          editProduct(viewingProduct);
+                        }}
+                      >
+                        <Edit className="h-4 w-4 mr-2" />
+                        Edit
+                      </Button>
+                    )}
+                  </div>
                 </DialogHeader>
                 
                 {viewingProduct && (
@@ -1086,14 +1438,16 @@ export function ProductManagement() {
 
                     {/* Basic Information */}
                     <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label className="text-sm font-medium">Product Name</Label>
-                        <div className="p-3 bg-gray-50 rounded-md text-sm">{viewingProduct.name}</div>
-                      </div>
+                      {/* Row 1: Product ID, Product Name */}
                       <div className="space-y-2">
                         <Label className="text-sm font-medium">Product ID</Label>
                         <div className="p-3 bg-gray-50 rounded-md text-sm">{viewingProduct.id}</div>
                       </div>
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium">Product Name</Label>
+                        <div className="p-3 bg-gray-50 rounded-md text-sm">{viewingProduct.name}</div>
+                      </div>
+                      {/* Row 2: Category, Sub Category */}
                       <div className="space-y-2">
                         <Label className="text-sm font-medium">Category</Label>
                         <div className="p-3 bg-gray-50 rounded-md text-sm">{viewingProduct.category}</div>
@@ -1102,49 +1456,57 @@ export function ProductManagement() {
                         <Label className="text-sm font-medium">Sub Category</Label>
                         <div className="p-3 bg-gray-50 rounded-md text-sm">{viewingProduct.subCategory || (viewingProduct as any).subcategory || "N/A"}</div>
                       </div>
+                      {/* Row 3: Stock Mode, Overall Stock Quantity */}
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium">Stock Mode</Label>
+                        <div className="p-3 bg-gray-50 rounded-md text-sm">{(viewingProduct as any).stockMode || "N/A"}</div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium">Overall Stock</Label>
+                        <div className="p-3 bg-gray-50 rounded-md text-sm">{viewingProduct.stock || 0} {viewingProduct.unit || ""}</div>
+                      </div>
+                      {/* Row 4: Sell Unit in B2C */}
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium">Sell Unit in B2C</Label>
+                        <div className="p-3 bg-gray-50 rounded-md text-sm">{(viewingProduct as any).b2cQty || 0} {(viewingProduct as any).b2cUnit || viewingProduct.unit || ""}</div>
+                      </div>
+                      {/* Row 5: Purchase Price, Sale Price */}
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium">Purchase Price</Label>
+                        <div className="p-3 bg-gray-50 rounded-md text-sm">₹{(viewingProduct as any).purchasePrice || (viewingProduct as any).purchasePrice || "0.00"}</div>
+                      </div>
                       <div className="space-y-2">
                         <Label className="text-sm font-medium">Sale Price</Label>
-                        <div className="p-3 bg-gray-50 rounded-md text-sm">₹{viewingProduct.price} / {viewingProduct.unit}</div>
+                        <div className="p-3 bg-gray-50 rounded-md text-sm">₹{viewingProduct.price || (viewingProduct as any).salePrice || "0.00"} / {viewingProduct.unit || ""}</div>
                       </div>
-                      {(viewingProduct as any).purchasePrice && (
-                        <div className="space-y-2">
-                          <Label className="text-sm font-medium">Purchase Price</Label>
-                          <div className="p-3 bg-gray-50 rounded-md text-sm">₹{(viewingProduct as any).purchasePrice}</div>
-                        </div>
-                      )}
+                      {/* Row 6: Compare Price */}
                       {(viewingProduct as any).comparePrice && (
                         <div className="space-y-2">
                           <Label className="text-sm font-medium">Compare Price</Label>
                           <div className="p-3 bg-gray-50 rounded-md text-sm">₹{(viewingProduct as any).comparePrice}</div>
                         </div>
                       )}
+                      {/* Row 7: Low Stock Alert, Product Status */}
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium">Stock</Label>
-                        <div className="p-3 bg-gray-50 rounded-md text-sm">{viewingProduct.stock} {viewingProduct.unit}</div>
+                        <Label className="text-sm font-medium">Low Stock Alert</Label>
+                        <div className="p-3 bg-gray-50 rounded-md text-sm">{(viewingProduct as any).lowStockAlert || viewingProduct.minStock || "0"}</div>
                       </div>
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium">Min Stock</Label>
-                        <div className="p-3 bg-gray-50 rounded-md text-sm">{viewingProduct.minStock} {viewingProduct.unit}</div>
+                        <Label className="text-sm font-medium">Product Status</Label>
+                        <div className="p-3 bg-gray-50 rounded-md text-sm">
+                          <Badge className={getProductStatusColor(getProductStatus(viewingProduct.stock || 0, (viewingProduct as any).lowStockAlert || viewingProduct.minStock || 0))}>
+                            {getProductStatus(viewingProduct.stock || 0, (viewingProduct as any).lowStockAlert || viewingProduct.minStock || 0).replace('-', ' ')}
+                          </Badge>
+                        </div>
                       </div>
+                      {/* Row 8: B2C Status */}
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium">Max Stock</Label>
-                        <div className="p-3 bg-gray-50 rounded-md text-sm">{viewingProduct.maxStock} {viewingProduct.unit}</div>
-                      </div>
-                      <div className="space-y-2">
-                        <Label className="text-sm font-medium">Supplier</Label>
-                        <div className="p-3 bg-gray-50 rounded-md text-sm">{viewingProduct.supplier}</div>
-                      </div>
-                      <div className="space-y-2">
-                        <Label className="text-sm font-medium">Status</Label>
-                        <div className="p-3 bg-gray-50 rounded-md text-sm">{viewingProduct.status}</div>
-                      </div>
-                      <div className="space-y-2">
-                        <Label className="text-sm font-medium">Quality</Label>
-                        <div className="p-3 bg-gray-50 rounded-md text-sm">{viewingProduct.quality}</div>
-                      </div>
-                      <div className="space-y-2">
-                        <Label className="text-sm font-medium">B2C Enabled</Label>
-                        <div className="p-3 bg-gray-50 rounded-md text-sm">{viewingProduct.onB2C ? "Yes" : "No"}</div>
+                        <Label className="text-sm font-medium">B2C Status</Label>
+                        <div className="p-3 bg-gray-50 rounded-md text-sm">
+                          <Badge className={getB2CStatusColor(getB2CStatus(viewingProduct.onB2C || false))}>
+                            {getB2CStatus(viewingProduct.onB2C || false)}
+                          </Badge>
+                        </div>
                       </div>
                     </div>
 
@@ -1179,26 +1541,81 @@ export function ProductManagement() {
                                       <thead>
                                         <tr className="border-b">
                                           <th className="text-left p-2">Variant Name</th>
-                                          <th className="text-left p-2">Stock</th>
-                                          <th className="text-left p-2">Price</th>
-                                          <th className="text-left p-2">B2C Qty</th>
-                                          <th className="text-left p-2">Status</th>
+                                          <th className="text-left p-2">Stock Quantity</th>
+                                          <th className="text-left p-2">Sell Unit in B2C</th>
+                                          <th className="text-left p-2">Product Status</th>
+                                          <th className="text-left p-2">Purchasing Price</th>
+                                          <th className="text-left p-2">Selling Price</th>
+                                          <th className="text-left p-2">Compare Price</th>
+                                          {((viewingProduct as any).stockMode !== "parent") && (
+                                            <>
+                                              <th className="text-left p-2">Low Stock Alert</th>
+                                              <th className="text-left p-2">Expiry Date</th>
+                                            </>
+                                          )}
+                                          <th className="text-left p-2">B2C Status</th>
                                         </tr>
                                       </thead>
                                       <tbody>
-                                        {productVariants.map((variant: any, index: number) => (
-                                          <tr key={index} className="border-b">
-                                            <td className="p-2">{variant.name}</td>
-                                            <td className="p-2">{variant.stock} {variant.unit}</td>
-                                            <td className="p-2">₹{variant.price}</td>
-                                            <td className="p-2">{variant.stock} {variant.unit}</td>
-                                            <td className="p-2">
-                                              <Badge className={getStatusColor(variant.status)}>
-                                                {variant.status.replace('-', ' ')}
-                                              </Badge>
-                                            </td>
-                                          </tr>
-                                        ))}
+                                        {productVariants.map((variant: any, index: number) => {
+                                          // Get Product Status - if stock mode is parent, use parent's product status
+                                          const getVariantProductStatus = () => {
+                                            const stockMode = (viewingProduct as any).stockMode;
+                                            
+                                            if (stockMode === "parent") {
+                                              // Get product status from parent
+                                              const parentStock = viewingProduct.stock || 0;
+                                              const parentLowStockAlert = (viewingProduct as any).lowStockAlert || viewingProduct.minStock || 0;
+                                              return getProductStatus(parentStock, parentLowStockAlert);
+                                            } else {
+                                              // For variant mode, use variant's own stock
+                                              const variantStock = variant.stock || 0;
+                                              const variantLowStockAlert = variant.minStock || (variant as any).lowStockAlert || 0;
+                                              return getProductStatus(variantStock, variantLowStockAlert);
+                                            }
+                                          };
+                                          
+                                          // Get B2C Status for variant
+                                          const getVariantB2CStatus = () => {
+                                            const variantOnB2C = variant.onB2C || (variant as any).publishToB2C || false;
+                                            return getB2CStatus(variantOnB2C);
+                                          };
+                                          
+                                          const variantProductStatus = getVariantProductStatus();
+                                          const variantB2CStatus = getVariantB2CStatus();
+                                          
+                                          return (
+                                            <tr key={index} className="border-b">
+                                              <td className="p-2">{variant.name}</td>
+                                              <td className="p-2">
+                                                {(viewingProduct as any).stockMode === "parent" 
+                                                  ? "-" 
+                                                  : `${variant.stock || 0} ${variant.unit || ""}`
+                                                }
+                                              </td>
+                                              <td className="p-2">{(variant as any).b2cQty || 0} {(variant as any).b2cUnit || variant.unit || ""}</td>
+                                              <td className="p-2">
+                                                <Badge className={getProductStatusColor(variantProductStatus)}>
+                                                  {variantProductStatus.replace('-', ' ')}
+                                                </Badge>
+                                              </td>
+                                              <td className="p-2">₹{(variant as any).purchasePrice || "0.00"}</td>
+                                              <td className="p-2">₹{variant.price || (variant as any).salePrice || "0.00"}</td>
+                                              <td className="p-2">₹{(variant as any).comparePrice || "0.00"}</td>
+                                              {((viewingProduct as any).stockMode !== "parent") && (
+                                                <>
+                                                  <td className="p-2">{variant.minStock || (variant as any).lowStockAlert || "0"}</td>
+                                                  <td className="p-2">{(variant as any).expiryDate || "N/A"}</td>
+                                                </>
+                                              )}
+                                              <td className="p-2">
+                                                <Badge className={getB2CStatusColor(variantB2CStatus)}>
+                                                  {variantB2CStatus}
+                                                </Badge>
+                                              </td>
+                                            </tr>
+                                          );
+                                        })}
                                       </tbody>
                                     </table>
                                   </div>
@@ -1227,22 +1644,6 @@ export function ProductManagement() {
                           </div>
                         </div>
                       )}
-
-                      {/* Additional Fields */}
-                      <div className="grid grid-cols-2 gap-4">
-                        {(viewingProduct as any).expiryDate && (
-                          <div className="space-y-2">
-                            <Label className="text-sm font-medium">Expiry Date</Label>
-                            <div className="p-3 bg-gray-50 rounded-md text-sm">{(viewingProduct as any).expiryDate}</div>
-                          </div>
-                        )}
-                        {(viewingProduct as any).lowStockAlert && (
-                          <div className="space-y-2">
-                            <Label className="text-sm font-medium">Low Stock Alert</Label>
-                            <div className="p-3 bg-gray-50 rounded-md text-sm">{(viewingProduct as any).lowStockAlert}</div>
-                          </div>
-                        )}
-                      </div>
                     </div>
                   </div>
                 )}
@@ -1262,7 +1663,10 @@ export function ProductManagement() {
                 className="pl-10"
               />
             </div>
-            <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+            <Select value={categoryFilter} onValueChange={(value) => {
+              setCategoryFilter(value);
+              setSubCategoryFilter("all");
+            }}>
               <SelectTrigger className="w-48">
                 <Filter className="h-4 w-4 mr-2" />
                 <SelectValue placeholder="All Categories" />
@@ -1274,13 +1678,40 @@ export function ProductManagement() {
                 ))}
               </SelectContent>
             </Select>
+            {categoryFilter !== "all" && (
+              <Select value={subCategoryFilter} onValueChange={setSubCategoryFilter}>
+                <SelectTrigger className="w-48">
+                  <SelectValue placeholder="All Sub Categories" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Sub Categories</SelectItem>
+                  {(() => {
+                    const selectedCategory = contextCategories.find(c => c.name === categoryFilter);
+                    const subCategories = selectedCategory ? getSubcategoriesByCategoryId(selectedCategory.id) : [];
+                    return subCategories.map((subCat) => (
+                      <SelectItem key={subCat.id} value={subCat.name}>{subCat.name}</SelectItem>
+                    ));
+                  })()}
+                </SelectContent>
+              </Select>
+            )}
+            <Select value={b2cStatusFilter} onValueChange={setB2cStatusFilter}>
+              <SelectTrigger className="w-40">
+                <SelectValue placeholder="B2C Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All B2C Status</SelectItem>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="inactive">Inactive</SelectItem>
+              </SelectContent>
+            </Select>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="w-40">
                 <SelectValue placeholder="All Status" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="in-stock">In Stock</SelectItem>
                 <SelectItem value="low-stock">Low Stock</SelectItem>
                 <SelectItem value="out-of-stock">Out of Stock</SelectItem>
               </SelectContent>
@@ -1349,7 +1780,14 @@ export function ProductManagement() {
           {/* Products Grid */}
           <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
             {filteredProducts.map((product) => (
-              <Card key={product.id} className="hover:shadow-md transition-all">
+              <Card 
+                key={product.id} 
+                className={`hover:shadow-md transition-all ${
+                  selectedProducts.has(product.id) 
+                    ? "border-2 border-blue-500 shadow-md" 
+                    : ""
+                }`}
+              >
                 <CardContent className="p-4">
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -1400,11 +1838,11 @@ export function ProductManagement() {
                     </div>
                     
                     <div className="flex items-center gap-2">
-                      <Badge className={getStatusColor(product.status)}>
-                        {product.status.replace('-', ' ')}
+                      <Badge className={getProductStatusColor(getProductStatus(product.stock || 0, (product as any).lowStockAlert || product.minStock || 0))}>
+                        {getProductStatus(product.stock || 0, (product as any).lowStockAlert || product.minStock || 0).replace('-', ' ')}
                       </Badge>
-                      <Badge className={getQualityColor(product.quality)}>
-                        {product.quality}
+                      <Badge className={getB2CStatusColor(getB2CStatus(product.onB2C || false))}>
+                        B2C: {getB2CStatus(product.onB2C || false)}
                       </Badge>
                     </div>
 
@@ -1437,13 +1875,24 @@ export function ProductManagement() {
                     </div>
 
                     <div className="text-xs text-muted-foreground">
-                      <span>Supplier: {product.supplier}</span>
-                      <br />
-                      <span>Updated: {product.lastUpdated}</span>
+                      <span>Updated: {product.lastUpdated || new Date().toISOString().split('T')[0]}</span>
                     </div>
                   </div>
 
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 items-center">
+                    <Checkbox
+                      checked={selectedProducts.has(product.id)}
+                      onCheckedChange={(checked) => {
+                        const newSelected = new Set(selectedProducts);
+                        if (checked) {
+                          newSelected.add(product.id);
+                        } else {
+                          newSelected.delete(product.id);
+                        }
+                        setSelectedProducts(newSelected);
+                      }}
+                      className="rounded-none"
+                    />
                     <Button variant="outline" size="sm" onClick={() => viewProduct(product)}>
                       <Eye className="h-4 w-4" />
                     </Button>

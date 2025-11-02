@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/hooks/use-toast";
 import { getPaymentMethodAccounts } from "@/lib/accounts";
 import AddItemsDialog from "@/components/AddItemsDialog";
+import { useProducts } from "@/contexts/ProductContext";
 
 interface PurchaseItem {
   id: string;
@@ -22,7 +23,15 @@ interface PurchaseItem {
   quantity: number;
   rate: number; // Purchasing price
   sellingPrice?: number;
+  comparePrice?: number;
   amount: number;
+  // New fields for additional columns
+  remainingStock?: number;
+  remainingStockUnit?: string;
+  b2cSellUnit?: string;
+  b2cSellUnitQty?: number;
+  lowStockAlert?: number;
+  expiryDate?: string;
 }
 
 // Mock item data with images
@@ -111,6 +120,7 @@ const mockPurchaseOrders = [
 
 export default function NewPurchaseOrder() {
   const navigate = useNavigate();
+  const { products } = useProducts();
   // Invoice number (PUR-00001 style), read-only
   const nextInvoiceNumber = useMemo(() => {
     const key = "purchaseInvoiceCounter";
@@ -132,19 +142,32 @@ export default function NewPurchaseOrder() {
   const [showAddItemsDialog, setShowAddItemsDialog] = useState(false);
   const [hambaliCharges, setHambaliCharges] = useState<number>(0);
   const handleAddItems = (selected: any[]) => {
-    const newItems = selected.map((item: any) => ({
-      id: item.id,
-      name: item.name,
-      image: item.imageUrl,
-      imageUrl: item.imageUrl,
-      category: item.category,
-      subCategory: item.subCategory || "",
-      unit: item.unit,
-      quantity: 1,
-      rate: item.purchasingPrice,
-      sellingPrice: item.sellingPrice,
-      amount: 1 * item.purchasingPrice,
-    }));
+    const newItems = selected.map((item: any) => {
+      // Find the product in the products context to get additional data
+      const product = products.find(p => p.id === item.id);
+      
+      return {
+        id: item.id,
+        name: item.name,
+        image: item.imageUrl,
+        imageUrl: item.imageUrl,
+        category: item.category,
+        subCategory: item.subCategory || "",
+        unit: item.unit,
+        quantity: 1,
+        rate: item.purchasingPrice || (product as any)?.purchasePrice || 0,
+        sellingPrice: item.sellingPrice || product?.price || 0,
+        comparePrice: (product as any)?.comparePrice || 0,
+        amount: 1 * (item.purchasingPrice || (product as any)?.purchasePrice || 0),
+        // Additional fields from product
+        remainingStock: product?.stock || 0,
+        remainingStockUnit: product?.unit || item.unit || "",
+        b2cSellUnit: (product as any)?.b2cUnit || item.unit || "",
+        b2cSellUnitQty: parseFloat((product as any)?.b2cQty || "0") || 0,
+        lowStockAlert: (product as any)?.lowStockAlert || product?.minStock || 0,
+        expiryDate: (product as any)?.expiryDate || "",
+      };
+    });
 
     const existingIds = new Set(items.map(i => i.id));
     const uniqueToAdd = newItems.filter(i => !existingIds.has(i.id));
@@ -384,7 +407,7 @@ export default function NewPurchaseOrder() {
 
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <Label>Purchase Items</Label>
+                <h3 className="text-xl font-bold">Purchase Items</h3>
                 <Button type="button" className="gap-2" onClick={() => setShowAddItemsDialog(true)}>
                   <Plus className="h-4 w-4" /> Add Item
                 </Button>
@@ -392,100 +415,132 @@ export default function NewPurchaseOrder() {
 
               {items.length > 0 ? (
                 <div className="border rounded-lg overflow-hidden">
-                  <table className="w-full">
-                    <thead className="bg-muted">
-                      <tr>
-                        <th className="text-left p-3 font-medium">Item Name</th>
-                        <th className="text-left p-3 font-medium w-24">Unit</th>
-                        <th className="text-left p-3 font-medium w-32">Purchase Qty</th>
-                        <th className="text-left p-3 font-medium w-32">Purchasing Price</th>
-                        <th className="text-left p-3 font-medium w-32">Selling Price</th>
-                        <th className="text-left p-3 font-medium w-32">Amount</th>
-                        <th className="w-12"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {items.map((item, index) => (
-                        <tr key={index} className="border-t">
-                          <td className="p-3">
-                            <div className="flex items-center gap-3">
-                              {(item.image || item.imageUrl) && <span className="text-2xl">{item.image || item.imageUrl}</span>}
-                              <span className="font-medium">{item.name}</span>
-                            </div>
-                          </td>
-                          <td className="p-3">{item.unit}</td>
-                          <td className="p-3">
-                            <Input
-                              type="number"
-                              value={item.quantity}
-                              onChange={(e) => updateItem(index, "quantity", parseFloat(e.target.value) || 0)}
-                              min="1"
-                              className="w-24"
-                            />
-                          </td>
-                          <td className="p-3">
-                            <Input
-                              type="number"
-                              value={item.rate}
-                              onChange={(e) => updateItem(index, "rate", parseFloat(e.target.value) || 0)}
-                              min="0"
-                              step="0.01"
-                              className="w-24"
-                            />
-                          </td>
-                          <td className="p-3">
-                            <Input
-                              type="number"
-                              value={item.sellingPrice ?? 0}
-                              onChange={(e) => updateItem(index, "sellingPrice", parseFloat(e.target.value) || 0)}
-                              min="0"
-                              step="0.01"
-                              className="w-24"
-                            />
-                          </td>
-                          <td className="p-3">
-                            <span className="font-semibold">₹{item.amount.toFixed(2)}</span>
-                          </td>
-                          <td className="p-3">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => removeItem(index)}
-                            >
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
-                          </td>
+                  {/* Scrollable table body */}
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-muted">
+                        <tr>
+                          <th className="text-left p-3 font-medium min-w-[150px]">Product Name</th>
+                          <th className="text-left p-3 font-medium min-w-[130px]">Remaining Stock</th>
+                          <th className="text-left p-3 font-medium min-w-[120px]">B2C Sell Unit</th>
+                          <th className="text-left p-3 font-medium min-w-[120px]">Purchase Quantity</th>
+                          <th className="text-left p-3 font-medium min-w-[130px]">Purchase Price</th>
+                          <th className="text-left p-3 font-medium min-w-[120px]">Amount</th>
+                          <th className="text-left p-3 font-medium min-w-[120px]">Sell Price</th>
+                          <th className="text-left p-3 font-medium min-w-[130px]">Compare Price</th>
+                          <th className="text-left p-3 font-medium min-w-[120px]">Low Stock Alert</th>
+                          <th className="text-left p-3 font-medium min-w-[130px]">Expiry Date</th>
+                          <th className="w-12"></th>
                         </tr>
-                      ))}
-                    </tbody>
-                    <tfoot className="bg-muted font-semibold">
-                      <tr className="border-t">
-                        <td colSpan={5} className="p-3 text-right font-bold">Subtotal:</td>
-                        <td className="p-3 font-bold">₹{subTotal.toFixed(2)}</td>
-                        <td></td>
-                      </tr>
-                      <tr>
-                        <td colSpan={5} className="p-3 text-right font-bold">Hambali charges:</td>
-                        <td className="p-3">
+                      </thead>
+                      <tbody>
+                        {items.map((item, index) => (
+                          <tr key={index} className="border-t">
+                            <td className="p-3">
+                              <div className="flex items-center gap-3">
+                                {(item.image || item.imageUrl) && <span className="text-2xl">{item.image || item.imageUrl}</span>}
+                                <span className="font-medium">{item.name}</span>
+                              </div>
+                            </td>
+                            <td className="p-3">
+                              <span className="text-sm">
+                                {item.remainingStock || 0} {item.remainingStockUnit || item.unit || ""}
+                              </span>
+                            </td>
+                            <td className="p-3">
+                              <span className="text-sm">
+                                {item.b2cSellUnitQty || 0} {item.b2cSellUnit || item.unit || ""}
+                              </span>
+                            </td>
+                            <td className="p-3">
+                              <Input
+                                type="number"
+                                value={item.quantity}
+                                onChange={(e) => updateItem(index, "quantity", parseFloat(e.target.value) || 0)}
+                                min="1"
+                                className="w-24"
+                              />
+                            </td>
+                            <td className="p-3">
+                              <Input
+                                type="number"
+                                value={item.rate}
+                                onChange={(e) => updateItem(index, "rate", parseFloat(e.target.value) || 0)}
+                                min="0"
+                                step="0.01"
+                                className="w-24"
+                              />
+                            </td>
+                            <td className="p-3">
+                              <span className="font-semibold">₹{item.amount.toFixed(2)}</span>
+                            </td>
+                            <td className="p-3">
+                              <Input
+                                type="number"
+                                value={item.sellingPrice ?? 0}
+                                onChange={(e) => updateItem(index, "sellingPrice", parseFloat(e.target.value) || 0)}
+                                min="0"
+                                step="0.01"
+                                className="w-24"
+                              />
+                            </td>
+                            <td className="p-3">
+                              <Input
+                                type="number"
+                                value={item.comparePrice ?? 0}
+                                onChange={(e) => updateItem(index, "comparePrice", parseFloat(e.target.value) || 0)}
+                                min="0"
+                                step="0.01"
+                                className="w-24"
+                              />
+                            </td>
+                            <td className="p-3">
+                              <span className="text-sm">{item.lowStockAlert || 0}</span>
+                            </td>
+                            <td className="p-3">
+                              <span className="text-sm">{item.expiryDate || "-"}</span>
+                            </td>
+                            <td className="p-3">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => removeItem(index)}
+                              >
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {/* Fixed footer - not scrollable */}
+                  <div className="bg-muted border-t">
+                    <div className="flex justify-end p-4">
+                      <div className="text-right space-y-2 font-semibold">
+                        <div>
+                          <span className="font-bold mr-4">Subtotal:</span>
+                          <span className="font-bold">₹{subTotal.toFixed(2)}</span>
+                        </div>
+                        <div>
+                          <span className="font-bold mr-4">Hambali charges:</span>
                           <Input
                             type="number"
                             value={hambaliCharges}
                             onChange={(e) => setHambaliCharges(parseFloat(e.target.value) || 0)}
                             min="0"
                             step="0.01"
-                            className="w-32"
+                            className="w-32 inline-block"
                           />
-                        </td>
-                        <td></td>
-                      </tr>
-                      <tr>
-                        <td colSpan={5} className="p-3 text-right font-bold">Total:</td>
-                        <td className="p-3 font-bold">₹{totalAmount.toFixed(2)}</td>
-                        <td></td>
-                      </tr>
-                    </tfoot>
-                  </table>
+                        </div>
+                        <div>
+                          <span className="font-bold mr-4">Total:</span>
+                          <span className="font-bold">₹{totalAmount.toFixed(2)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               ) : (
                 <div className="border rounded-lg p-8 text-center text-muted-foreground">
