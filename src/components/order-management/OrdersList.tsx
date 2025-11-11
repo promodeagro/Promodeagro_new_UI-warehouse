@@ -2,7 +2,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/StatusBadge";
 import { type OrderStatus, type PaymentMode } from "@/data/orderData";
 import { useOrders } from "@/contexts/OrderContext";
-import { ArrowLeft, Search, Package, CheckCircle, XCircle, Clock, Calendar, MapPin, User, Phone, Filter, ChevronDown, ChevronUp, IndianRupee, Plus, Printer, CreditCard, CheckCircle2, XCircle as XCircleIcon, Truck, RotateCcw, AlertTriangle, Check } from "lucide-react";
+import { ArrowLeft, Search, Package, CheckCircle, XCircle, Clock, Calendar, MapPin, User, Phone, Filter, ChevronDown, ChevronUp, IndianRupee, Plus, Printer, CreditCard, CheckCircle2, XCircle as XCircleIcon, Truck, RotateCcw, AlertTriangle, Check, ArrowUpDown } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,10 +10,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useState, useMemo } from "react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger
+} from "@/components/ui/dropdown-menu";
 
 const OrdersList = () => {
   const navigate = useNavigate();
-  const { orders, resetOrders } = useOrders();
+  const { orders, resetOrders, updateOrderStatus } = useOrders();
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<OrderStatus | "all">("all");
   const [paymentFilter, setPaymentFilter] = useState<PaymentMode | "all">("all");
@@ -173,10 +179,14 @@ const OrdersList = () => {
         return <CheckCircle2 className="h-4 w-4 text-purple-600" />;
       case 'Packed':
         return <Package className="h-4 w-4 text-orange-600" />;
+      case 'On the way':
+        return <Truck className="h-4 w-4 text-blue-600" />;
       case 'Dispatched':
         return <Truck className="h-4 w-4 text-indigo-600" />;
       case 'Delivered':
         return <CheckCircle className="h-4 w-4 text-green-600" />;
+      case 'Undelivered':
+        return <XCircleIcon className="h-4 w-4 text-red-600" />;
       case 'Cancelled':
         return <XCircleIcon className="h-4 w-4 text-red-600" />;
       case 'Returned':
@@ -255,6 +265,38 @@ const OrdersList = () => {
     );
   }
 
+  const selectedOrdersData = useMemo(() => {
+    return (orders || []).filter(order => selectedOrders.has(order.id));
+  }, [orders, selectedOrders]);
+
+  const firstCancellationRequest = useMemo(() => {
+    return selectedOrdersData.find(order => order.status === 'Returned');
+  }, [selectedOrdersData]);
+
+  const statusOptions: { value: OrderStatus; label: string; packingStatus?: 'pending' | 'assigned' | 'packed' | 'out_of_stock' }[] = useMemo(() => ([
+    { value: 'Placed', label: 'Order Placed', packingStatus: 'pending' },
+    { value: 'Accepted', label: 'Order In Process', packingStatus: 'assigned' },
+    { value: 'Packed', label: 'Packed', packingStatus: 'packed' },
+    { value: 'On the way', label: 'On The Way' },
+    { value: 'Dispatched', label: 'Dispatched' },
+    { value: 'Delivered', label: 'Delivered' },
+    { value: 'Undelivered', label: 'Undelivered' },
+    { value: 'Cancelled', label: 'Cancelled' },
+    { value: 'Returned', label: 'Request for Cancellation' },
+    { value: 'Failed', label: 'Failed' }
+  ]), []);
+
+  const handleBulkStatusChange = (status: OrderStatus, packingStatus?: 'pending' | 'assigned' | 'packed' | 'out_of_stock') => {
+    const ids = Array.from(selectedOrders);
+    if (ids.length === 0) return;
+
+    ids.forEach(orderId => {
+      updateOrderStatus(orderId, status, packingStatus);
+    });
+
+    setSelectedOrders(new Set());
+  };
+
   return (
     <div className="space-y-6">
       {/* Page header */}
@@ -276,8 +318,46 @@ const OrdersList = () => {
             <XCircle className="h-4 w-4" />
             Reset Orders
           </Button>
+          {firstCancellationRequest && (
+            <Button
+              variant="outline"
+              className="flex items-center gap-2 border-amber-300 text-amber-700 hover:bg-amber-50"
+              onClick={() => {
+                const targetOrder = firstCancellationRequest;
+                setSelectedOrders(new Set());
+                navigate(`/order-management/orders/${targetOrder.id}`, {
+                  state: {
+                    openCancelDialog: true
+                  }
+                });
+              }}
+            >
+              <AlertTriangle className="h-4 w-4" />
+              Process Cancellation
+            </Button>
+          )}
+          {selectedOrders.size > 0 && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button className="flex items-center gap-2">
+                  <ArrowUpDown className="h-4 w-4" />
+                  Change Status ({selectedOrders.size})
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-[220px]">
+                {statusOptions.map(option => (
+                  <DropdownMenuItem
+                    key={option.value}
+                    onClick={() => handleBulkStatusChange(option.value, option.packingStatus)}
+                  >
+                    {option.label}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
           <Button 
-            className="bg-success hover:bg-success/90"
+            className="bg-primary hover:bg-primary/90"
             onClick={() => navigate('/order-management/add-order')}
           >
             <Plus className="h-4 w-4 mr-2" />
@@ -382,10 +462,12 @@ const OrdersList = () => {
                       <SelectItem value="Placed">Order Placed</SelectItem>
                       <SelectItem value="Accepted">Order In Process</SelectItem>
                       <SelectItem value="Packed">Packed</SelectItem>
-                      <SelectItem value="Dispatched">On The Way</SelectItem>
+                      <SelectItem value="On the way">On The Way</SelectItem>
+                      <SelectItem value="Dispatched">Dispatched</SelectItem>
                       <SelectItem value="Delivered">Delivered</SelectItem>
+                      <SelectItem value="Undelivered">Undelivered</SelectItem>
                       <SelectItem value="Items No Stock">Items No Stock</SelectItem>
-                      <SelectItem value="Failed">Undelivered</SelectItem>
+                      <SelectItem value="Failed">Failed</SelectItem>
                       <SelectItem value="Returned">Request for Cancellation</SelectItem>
                       <SelectItem value="Cancelled">Cancel Order</SelectItem>
                     </SelectContent>

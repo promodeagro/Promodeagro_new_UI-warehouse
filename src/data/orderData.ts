@@ -1,6 +1,6 @@
 // Order Management Data Types and Dummy Data
 
-export type OrderStatus = 'Placed' | 'Accepted' | 'Packed' | 'Delivered' | 'Cancelled' | 'Returned' | 'Failed' | 'Out of Stock' | 'Items out of Stock' | 'Items No Stock';
+export type OrderStatus = 'Placed' | 'Accepted' | 'Packed' | 'On the way' | 'Delivered' | 'Undelivered' | 'Cancelled' | 'Returned' | 'Failed' | 'Out of Stock' | 'Items out of Stock' | 'Items No Stock';
 export type PaymentMode = 'COD' | 'Online';
 
 export interface OrderItem {
@@ -35,10 +35,13 @@ export interface Order {
   notes?: string;
   discount?: number;
   shipping_charges?: number;
-  packing_status?: 'pending' | 'assigned' | 'in_process' | 'packed' | 'out_of_stock';
+  packing_status?: 'pending' | 'assigned' | 'in_process' | 'packed' | 'out_of_stock' | 'cancelled';
   assigned_packer_id?: string;
   assigned_packer_name?: string;
   pincode?: string;
+  cancellation_requested?: boolean;
+  cancellation_reason?: string;
+  cancellation_requested_at?: string;
 }
 
 export interface Rider {

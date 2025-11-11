@@ -77,7 +77,6 @@ import ReportDetail from '@/components/accounts/reports/ReportDetail';
 
 // Delivery components
 import RunsheetManagement from '@/components/delivery/RunsheetManagement';
-import RiderManagementDashboard from '@/components/delivery/RiderManagementDashboard';
 import RiderOverview from '@/components/delivery/RiderOverview';
 import CashCollectionManagement from '@/components/delivery/CashCollectionManagement';
 import RiderRunsheets from '@/components/delivery/RiderRunsheets';
@@ -88,6 +87,7 @@ import CashVerificationDetails from '@/components/delivery/CashVerificationDetai
 import CollectionDetailsView from '@/components/delivery/CollectionDetailsView';
 import CloseRunsheet from '@/components/delivery/CloseRunsheet';
 import RiderOnboardingQueue from '@/components/delivery/RiderOnboardingQueue';
+import RiderApplicationDetails from '@/components/delivery/RiderApplicationDetails';
 
 // Create a query client
 const queryClient = new QueryClient({
@@ -146,17 +146,22 @@ function App() {
                   <Route path="/pincodes" element={<PincodeManagement />} />
                   
                   {/* Delivery Management */}
-                  <Route path="/delivery/rider-management" element={<RiderManagementDashboard />} />
                   <Route path="/delivery/rider-overview" element={<RiderOverview />} />
                   <Route path="/delivery/runsheets" element={<RunsheetManagement />} />
-                  <Route path="/delivery/runsheets/:id" element={<RunsheetDetails />} />
+                  <Route path="/delivery/runsheets/:id" element={<CloseRunsheet />} />
+                  <Route path="/delivery/runsheets/view/:id" element={<CloseRunsheet />} />
+                  <Route path="/delivery/runsheet-management/closerunsheet/:id" element={<CloseRunsheet />} />
                   <Route path="/delivery/create-runsheet" element={<CreateRunsheet />} />
                   <Route path="/delivery/rider-onboarding-queue" element={<RiderOnboardingQueue />} />
+                  <Route path="/delivery/rider-onboarding-queue/:riderId" element={<RiderApplicationDetails />} />
                   <Route path="/delivery/cash-collection" element={<CashCollectionManagement />} />
                   <Route path="/delivery/cash-verification/:id" element={<CashVerificationDetails />} />
                   <Route path="/delivery/collection-details/:id" element={<CollectionDetailsView />} />
                   <Route path="/delivery/close-runsheet/:runsheetId" element={<CloseRunsheet />} />
                   <Route path="/delivery/rider/delivery/:id" element={<DeliveryAction />} />
+                  {/* New route alias per requirement */}
+                  <Route path="/delivery/rider-overview/runsheets-history/:riderId" element={<RiderRunsheets />} />
+                  {/* Backward compatibility */}
                   <Route path="/delivery/rider-runsheets/:riderId" element={<RiderRunsheets />} />
                   
                   {/* Logistics */}

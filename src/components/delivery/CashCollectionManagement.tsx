@@ -71,21 +71,25 @@ const CashCollectionManagement = () => {
     return matchesSearch && matchesStatus;
   });
 
-  const totalExpected = codCollections.reduce((sum, c) => sum + c.expected, 0);
-  const totalCollected = codCollections.reduce((sum, c) => sum + c.collected, 0);
-  const totalDiscrepancy = codCollections.reduce((sum, c) => sum + Math.abs(c.difference), 0);
+  // Calculate stats from actual data - ready for API integration
+  // TODO: Replace with real API data when backend is ready
+  // When API is ready, replace codCollections with API call result
+  const totalExpected = codCollections.reduce((sum, c) => sum + (c.expected || 0), 0);
+  const totalCollected = codCollections.reduce((sum, c) => sum + (c.collected || 0), 0);
+  const totalDiscrepancy = codCollections.reduce((sum, c) => sum + Math.abs(c.difference || 0), 0);
   const pendingVerification = codCollections.filter((c) => !c.verified).length;
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b bg-card sticky top-0 z-10 shadow-sm">
-        <div className="container mx-auto px-6 py-4">
-          <h1 className="text-2xl font-bold text-foreground">Cash Collection & Settlement</h1>
-          <p className="text-sm text-muted-foreground">Verify and manage COD collections from riders</p>
+    <div className="min-h-screen bg-muted/30">
+      {/* Page header - matches Rider Onboarding Queue */}
+      <main>
+        <div className="flex items-center justify-between mb-4 sm:mb-5 md:mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Cash Collection & Settlement</h1>
+            <p className="text-sm text-muted-foreground">Verify and manage COD collections from riders</p>
+          </div>
         </div>
-      </header>
 
-      <main className="container mx-auto px-6 py-8">
         {/* Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           <Card>

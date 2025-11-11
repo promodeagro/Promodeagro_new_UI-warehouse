@@ -327,7 +327,11 @@ export default function PackerOrders() {
                         </TableRow>
                       ) : (
                         filteredOrders.map((order) => (
-                          <TableRow key={order.id}>
+                          <TableRow 
+                            key={order.id}
+                            className="cursor-pointer hover:bg-muted/50"
+                            onClick={() => navigate(`/order-management/orders/${order.id}?from=packer-orders&packerId=${packerId}`)}
+                          >
                             <TableCell className="font-medium whitespace-nowrap">{order.order_number}</TableCell>
                             <TableCell className="whitespace-nowrap">{order.customer_name}</TableCell>
                             <TableCell className="text-sm whitespace-nowrap">{order.customer_phone}</TableCell>
@@ -358,7 +362,7 @@ export default function PackerOrders() {
                                 <span className="text-sm text-gray-700">Sync</span>
                               </div>
                             </TableCell>
-                            <TableCell className="whitespace-nowrap">
+                            <TableCell className="whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                               <div className="flex items-center gap-1">
                                 <Button 
                                   variant="outline" 

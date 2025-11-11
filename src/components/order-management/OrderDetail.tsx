@@ -5,7 +5,7 @@ import { useProducts } from "@/contexts/ProductContext";
 import { useOrders } from "@/contexts/OrderContext";
 import { useNotifications } from "@/contexts/NotificationContext";
 import { ArrowLeft, Phone, MapPin, Clock, CreditCard, Package, User, Trash2, Plus, Printer, X, RotateCcw, Calendar, Search } from "lucide-react";
-import { Link, useParams, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useParams, useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
@@ -15,15 +15,70 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 
 const OrderDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const { orders, updateOrderStatus } = useOrders();
-  const order = orders?.find(o => o.id === id);
+  const [refreshKey, setRefreshKey] = useState(0);
+  
+  // Get the current order - will update when orders change
+  const order = useMemo(() => {
+    return orders?.find(o => o.id === id);
+  }, [orders, id, refreshKey]);
+  
   const { products, searchProducts: searchProductsContext } = useProducts();
+
+  // Listen for order updates from PackerOverview, runsheet operations, or other components
+  useEffect(() => {
+    const handleOrderUpdate = (event?: CustomEvent | Event) => {
+      // Force re-render to get latest order data
+      setRefreshKey(prev => prev + 1);
+      
+      // If event has orderIds and one matches current order, force immediate refresh
+      if (event && 'detail' in event && event.detail) {
+        const detail = event.detail as any;
+        if (detail.orderIds && Array.isArray(detail.orderIds) && detail.orderIds.includes(id)) {
+          // Current order was updated - force immediate refresh
+          setTimeout(() => {
+            setRefreshKey(prev => prev + 1);
+          }, 100);
+        } else if (detail.orderId === id) {
+          // Current order was updated - force immediate refresh
+          setTimeout(() => {
+            setRefreshKey(prev => prev + 1);
+          }, 100);
+        }
+      }
+    };
+    
+    const handleCustomEvent = (e: Event) => handleOrderUpdate(e as CustomEvent);
+    
+    window.addEventListener('orderStatusUpdated', handleCustomEvent);
+    window.addEventListener('riderOrderCompleted', handleCustomEvent);
+    window.addEventListener('storage', (e) => {
+      if (e.key === 'warehouse-orders') {
+        handleOrderUpdate(e);
+      }
+    });
+    
+    // Poll for updates (fallback) - more frequent for runsheet sync
+    const pollInterval = setInterval(() => {
+      const storedOrders = localStorage.getItem('warehouse-orders');
+      if (storedOrders) {
+        handleOrderUpdate();
+      }
+    }, 2000); // Poll every 2 seconds for faster sync
+    
+    return () => {
+      window.removeEventListener('orderStatusUpdated', handleCustomEvent);
+      window.removeEventListener('riderOrderCompleted', handleCustomEvent);
+      clearInterval(pollInterval);
+    };
+  }, [id]);
 
   // Handle context-aware back navigation
   const handleBackNavigation = () => {
@@ -32,6 +87,13 @@ const OrderDetail = () => {
     if (from === 'packer-overview') {
       // If came from packer overview, go back to packer overview
       navigate('/order-management/packer-overview');
+    } else if (from === 'packer-orders') {
+      const packerId = searchParams.get('packerId');
+      if (packerId) {
+        navigate(`/order-management/packer-orders/${packerId}`);
+      } else {
+        navigate('/order-management/packer-overview');
+      }
     } else {
       // Default: go back to orders list
       navigate('/order-management/orders');
@@ -39,9 +101,11 @@ const OrderDetail = () => {
   };
 
   // Add loading state while orders are being fetched
-  if (!orders) {
+  if (!orders || !order) {
     return <div>Loading...</div>;
   }
+  
+  // State declarations that depend on order
   const [orderItems, setOrderItems] = useState(order?.items || []);
   const [removedItems, setRemovedItems] = useState<typeof order.items>([]);
   const [showAddItemDialog, setShowAddItemDialog] = useState(false);
@@ -50,10 +114,39 @@ const OrderDetail = () => {
   const [discountAmount, setDiscountAmount] = useState<number>(order?.discount || 0);
   const [orderStatus, setOrderStatus] = useState(order?.status || 'Placed');
   const [showCancelDialog, setShowCancelDialog] = useState(false);
-  const [cancelReason, setCancelReason] = useState('');
+  const [cancelReason, setCancelReason] = useState(order?.cancellation_reason || '');
+  
   // Auto-save functionality - no need for hasUnsavedChanges state
   const { updateOrder } = useOrders();
   const { addNotification } = useNotifications();
+  
+  // Auto-open cancel dialog when navigated from cancellation processing
+  useEffect(() => {
+    const state = location.state as { openCancelDialog?: boolean } | null;
+    if (state?.openCancelDialog) {
+      setShowCancelDialog(true);
+      if (order?.cancellation_reason) {
+        setCancelReason(order.cancellation_reason);
+      }
+      navigate(location.pathname + location.search, { replace: true });
+    }
+  }, [location.state, location.pathname, location.search, order?.cancellation_reason, navigate]);
+
+  // Keep cancellation reason in sync with order updates
+  useEffect(() => {
+    if (order?.cancellation_reason) {
+      setCancelReason(order.cancellation_reason);
+    }
+  }, [order?.cancellation_reason]);
+
+  // Update local state when order changes (from PackerOverview or other sources)
+  useEffect(() => {
+    if (order) {
+      setOrderItems(order.items || []);
+      setOrderStatus(order.status || 'Placed');
+      setDiscountAmount(order.discount || 0);
+    }
+  }, [order?.id, order?.status, order?.items, order?.discount, refreshKey]);
 
   // Auto-save function that updates the order in context
   const autoSaveOrder = () => {
@@ -70,10 +163,6 @@ const OrderDetail = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
-
-  if (!orders || !order) {
-    return <div>Order not found</div>;
-  }
 
   const handleRemoveItem = (itemId: string) => {
     const item = orderItems.find(i => i.id === itemId);
@@ -199,15 +288,42 @@ const OrderDetail = () => {
       toast.error('Please enter a cancellation reason');
       return;
     }
+    if (!order) return;
+
+    const trimmedReason = cancelReason.trim();
+    if (!trimmedReason) {
+      toast.error('Please enter a cancellation reason');
+      return;
+    }
+
     setOrderStatus('Cancelled');
     setShowCancelDialog(false);
+    updateOrderStatus(order.id, 'Cancelled');
+    updateOrder(order.id, {
+      status: 'Cancelled',
+      cancellation_reason: trimmedReason,
+      cancellation_requested: false,
+      assigned_packer_id: undefined,
+      assigned_packer_name: undefined,
+      packing_status: 'cancelled',
+      updated_at: new Date().toISOString()
+    });
     toast.success('Order cancelled successfully');
   };
 
   const handleReAttempt = () => {
+    if (!order) return;
+
     setShowCancelDialog(false);
     setCancelReason('');
     setOrderStatus('Placed');
+    updateOrderStatus(order.id, 'Placed', 'pending');
+    updateOrder(order.id, {
+      status: 'Placed',
+      cancellation_reason: '',
+      cancellation_requested: false,
+      updated_at: new Date().toISOString()
+    });
     toast.success('Order re-attempted successfully');
   };
 
@@ -293,6 +409,7 @@ const OrderDetail = () => {
       case 'assigned': return 'outline';
       case 'pending': return 'secondary';
       case 'out_of_stock': return 'destructive';
+      case 'cancelled': return 'destructive';
       default: return 'secondary';
     }
   };
@@ -303,6 +420,7 @@ const OrderDetail = () => {
       case 'assigned': return '📋';
       case 'pending': return '⏳';
       case 'out_of_stock': return '🔴';
+      case 'cancelled': return '❌';
       default: return '⏳';
     }
   };
@@ -919,62 +1037,48 @@ const OrderDetail = () => {
           <div className="space-y-4 sm:space-y-6 lg:space-y-8 w-full lg:w-[450px]">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle className="flex items-center gap-2">
+                <CardTitle className="flex items-center gap-2 whitespace-nowrap">
                   <User className="h-5 w-5" />
                   Customer Details
                 </CardTitle>
                 <div className="ml-6 flex flex-col items-end">
-                  {(() => {
-                    // Dynamic status logic
-                    if (order.status === 'Delivered') {
-                      return (
-                        <>
-                          <Badge variant="default" className="bg-green-100 text-green-700">Delivered</Badge>
-                        </>
-                      );
-                    } else if (order.status === 'Dispatched') {
-                      return (
-                        <>
-                          <Badge variant="outline" className="bg-blue-100 text-blue-700">On the way</Badge>
-                          <span className="text-xs text-muted-foreground mt-1">To {order.assigned_packer_name || 'Packer'}</span>
-                        </>
-                      );
-                    } else if (order.packing_status === 'assigned') {
-                      return (
-                        <>
-                          <Badge variant="outline" className="bg-purple-100 text-purple-700">Assigned</Badge>
-                          <span className="text-xs text-muted-foreground mt-1">To {order.assigned_packer_name || 'Packer'}</span>
-                        </>
-                      );
-                    } else if (order.packing_status === 'pending') {
-                      return (
-                        <>
-                          <Badge variant="outline" className="bg-orange-100 text-orange-700">Pending</Badge>
-                          <span className="text-xs text-muted-foreground mt-1">To {order.assigned_packer_name || 'Packer'}</span>
-                        </>
-                      );
-                    } else if (order.packing_status === 'packed') {
-                      return (
-                        <>
-                          <Badge variant="outline" className="bg-green-100 text-green-700">Packed</Badge>
-                          <span className="text-xs text-muted-foreground mt-1">To {order.assigned_packer_name || 'Packer'}</span>
-                        </>
-                      );
-                    } else if (order.packing_status === 'out_of_stock') {
-                      return (
-                        <>
-                          <Badge variant="destructive" className="bg-red-100 text-red-700">Items No Stock</Badge>
-                          <span className="text-xs text-muted-foreground mt-1">To {order.assigned_packer_name || 'Packer'}</span>
-                        </>
-                      );
-                    } else {
-                      return (
-                        <>
-                          <Badge variant="outline" className="bg-blue-100 text-blue-700">Order Placed</Badge>
-                        </>
-                      );
-                    }
-                  })()}
+                  <StatusBadge status={order.status} />
+                  {/* Show packer name ONLY for packing statuses (not when On the way/Delivered/Undelivered) */}
+                  {order.assigned_packer_name && 
+                   (order.status === 'Packed' || order.packing_status === 'packed' || order.packing_status === 'assigned' || order.packing_status === 'pending') &&
+                   order.status !== 'On the way' && order.status !== 'Delivered' && order.status !== 'Undelivered' && (
+                    <span className="text-xs text-muted-foreground mt-1">
+                      {(order.status === 'Packed' || order.packing_status === 'packed') ? 'By' : 'To'} {order.assigned_packer_name}
+                    </span>
+                  )}
+                  {/* Show rider name ONLY for delivery statuses (On the way, Delivered, Undelivered) */}
+                  {(order.status === 'On the way' || order.status === 'Delivered' || order.status === 'Undelivered') && (order as any).assigned_rider_name && (
+                    <div className="flex flex-col items-end mt-1">
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">
+                        {order.status === 'On the way'
+                          ? 'With'
+                          : order.status === 'Delivered'
+                          ? 'Delivered by'
+                          : 'By'} {(order as any).assigned_rider_name}
+                      </span>
+                      {/* Show undelivered reason if status is Undelivered */}
+                      {order.status === 'Undelivered' && (order as any).undelivered_reason && (
+                        <span className="text-xs text-red-600 mt-1 font-medium">
+                          Reason: {(() => {
+                            const reasonMap: Record<string, string> = {
+                              'customer_cancelled': 'Customer Cancelled',
+                              'wrong_address': 'Wrong Address',
+                              'damaged_item': 'Damaged Item',
+                              'payment_issue': 'Payment Issue',
+                              'customer_not_available': 'Customer Not Available',
+                              'others': 'Others'
+                            };
+                            return reasonMap[(order as any).undelivered_reason] || (order as any).undelivered_reason;
+                          })()}
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -1064,12 +1168,48 @@ const OrderDetail = () => {
                     </div>
                   </div>
                 )}
-                {order.assigned_packer_name && (
+                {order.assigned_packer_name && (order.status === 'Packed' || order.packing_status === 'packed' || order.packing_status === 'assigned' || order.packing_status === 'pending') && (
                   <div className="flex items-center gap-3">
                     <User className="h-5 w-5 text-muted-foreground" />
                     <div className="flex-1">
                       <p className="text-sm text-muted-foreground">Assigned Packer</p>
                       <p className="font-medium text-foreground">{order.assigned_packer_name}</p>
+                    </div>
+                  </div>
+                )}
+                {/* Show rider information for delivery statuses */}
+                {(order.status === 'On the way' || order.status === 'Delivered' || order.status === 'Undelivered') && (order as any).assigned_rider_name && (
+                  <div className="flex items-center gap-3">
+                    <User className="h-5 w-5 text-muted-foreground" />
+                    <div className="flex-1">
+                      <p className="text-sm text-muted-foreground whitespace-nowrap">
+                        {order.status === 'On the way' ? 'Assigned Rider' : order.status === 'Delivered' ? 'Delivered by Rider' : 'By Rider'}
+                      </p>
+                      <p className="font-medium text-foreground">{(order as any).assigned_rider_name}</p>
+                      {/* Show undelivered reason if status is Undelivered */}
+                      {order.status === 'Undelivered' && (order as any).undelivered_reason && (
+                        <div className="mt-2 pt-2 border-t">
+                          <p className="text-xs text-muted-foreground mb-1">Undelivered Reason</p>
+                          <p className="text-sm font-medium text-red-600">
+                            {(() => {
+                              const reasonMap: Record<string, string> = {
+                                'customer_cancelled': 'Customer Cancelled',
+                                'wrong_address': 'Wrong Address',
+                                'damaged_item': 'Damaged Item',
+                                'payment_issue': 'Payment Issue',
+                                'customer_not_available': 'Customer Not Available',
+                                'others': 'Others'
+                              };
+                              return reasonMap[(order as any).undelivered_reason] || (order as any).undelivered_reason;
+                            })()}
+                          </p>
+                          {(order as any).undelivered_notes && (
+                            <p className="text-xs text-muted-foreground mt-1 italic">
+                              {(order as any).undelivered_notes}
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}

@@ -87,6 +87,9 @@ export default function PackerOverview() {
     return initialState;
   });
   
+  // Refresh key to force re-renders when orders are updated
+  const [refreshKey, setRefreshKey] = useState(0);
+  
   // Pagination for orders table
   const [ordersCurrentPage, setOrdersCurrentPage] = useState<number>(1);
   const ordersPerPage = 10;
@@ -103,7 +106,6 @@ export default function PackerOverview() {
   
   // Manual status change states
   const [showStatusChangeDialog, setShowStatusChangeDialog] = useState<boolean>(false);
-  const [newStatus, setNewStatus] = useState<string>('');
   const [newPackingStatus, setNewPackingStatus] = useState<string>('');
 
   const activePacker = useMemo(() => packers.find(p => p.id === activePackerId) || packers[0], [activePackerId]);
@@ -370,6 +372,15 @@ export default function PackerOverview() {
     const base = orders || [];
     
     return base.map(order => {
+      if (order.status === 'Cancelled' || order.status === 'Returned' || order.status === 'Failed' || order.packing_status === 'cancelled') {
+        return {
+          ...order,
+          packing_status: 'cancelled',
+          assigned_packer_id: undefined,
+          assigned_packer_name: undefined
+        };
+      }
+
       // If order already has packing status, use it; otherwise assign default pending
       if (order.packing_status) {
         // Safeguard: If order has packer ID but no name, try to resolve it
@@ -392,7 +403,7 @@ export default function PackerOverview() {
         assigned_packer_name: undefined,
       } as any;
     });
-  }, [orders, packers, updateOrder]);
+  }, [orders, packers, updateOrder, refreshKey]);
 
   // Calculate packer workloads for smart assignment
   const packerWorkloads = useMemo(() => {
@@ -506,8 +517,8 @@ export default function PackerOverview() {
 
       let matchesFilter = true;
       if (activeTab === 'all') {
-        // Show all orders from the 4 main statuses: assigned, pending, packed, out_of_stock
-        matchesFilter = ['assigned', 'pending', 'packed', 'out_of_stock'].includes(order.packing_status);
+        // Show all orders from the main statuses including cancelled
+        matchesFilter = ['assigned', 'pending', 'packed', 'out_of_stock', 'cancelled'].includes(order.packing_status);
       } else if (activeTab === 'assigned') matchesFilter = order.packing_status === 'assigned';
       else if (activeTab === 'pending') matchesFilter = order.packing_status === 'pending' || order.packing_status === 'out_of_stock';
       else if (activeTab === 'packed') matchesFilter = order.packing_status === 'packed';
@@ -539,6 +550,7 @@ export default function PackerOverview() {
       case 'assigned': return 'bg-primary/10 text-primary border-primary/20';
       case 'pending': return 'bg-warning/10 text-warning border-warning/20';
       case 'out_of_stock': return 'bg-destructive/10 text-destructive border-destructive/20';
+      case 'cancelled': return 'bg-destructive/20 text-destructive border-destructive/40';
       default: return 'bg-muted text-muted-foreground';
     }
   };
@@ -696,6 +708,36 @@ export default function PackerOverview() {
       window.removeEventListener('storage', handleStorageChange);
     };
   }, []);
+  
+  // Listen for order status updates and refresh the UI
+  useEffect(() => {
+    const handleOrderUpdate = () => {
+      setRefreshKey(prev => prev + 1);
+    };
+    
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'warehouse-orders') {
+        handleOrderUpdate();
+      }
+    };
+    
+    window.addEventListener('orderStatusUpdated', handleOrderUpdate);
+    window.addEventListener('storage', handleStorageChange);
+    
+    // Poll for updates (fallback)
+    const pollInterval = setInterval(() => {
+      const storedOrders = localStorage.getItem('warehouse-orders');
+      if (storedOrders) {
+        handleOrderUpdate();
+      }
+    }, 2000);
+    
+    return () => {
+      window.removeEventListener('orderStatusUpdated', handleOrderUpdate);
+      window.removeEventListener('storage', handleStorageChange);
+      clearInterval(pollInterval);
+    };
+  }, []);
 
   // Selection handlers
   const handleSelectAll = (checked: boolean) => {
@@ -792,27 +834,36 @@ export default function PackerOverview() {
   const handleStartOrder = (orderId: string) => {
     const order = orders.find(o => o.id === orderId);
     if (order) {
-      console.log('🚀 Starting order:', orderId);
-      updateOrderStatusCentralized(orderId, 'assigned');
-      toast.success(`Order ${order.order_number} started`);
+      console.log('🚀 Starting order:', orderId, order.order_number);
+      updateOrderStatusCentralized(orderId, 'pending', 'button');
+      toast.success(`Order ${order.order_number} started - Status changed to PENDING`);
+    } else {
+      console.error('Order not found:', orderId);
+      toast.error(`Order ${orderId} not found`);
     }
   };
 
   const handleCompleteOrder = (orderId: string) => {
     const order = orders.find(o => o.id === orderId);
     if (order) {
-      console.log('✅ Completing order:', orderId);
-      updateOrderStatusCentralized(orderId, 'packed');
-      toast.success(`Order ${order.order_number} completed`);
+      console.log('✅ Completing order:', orderId, order.order_number);
+      updateOrderStatusCentralized(orderId, 'packed', 'button');
+      toast.success(`Order ${order.order_number} completed - Status changed to PACKED`);
+    } else {
+      console.error('Order not found:', orderId);
+      toast.error(`Order ${orderId} not found`);
     }
   };
 
   const handleItemsNoStock = (orderId: string) => {
     const order = orders.find(o => o.id === orderId);
     if (order) {
-      console.log('🔴 Marking order as out of stock:', orderId);
-      updateOrderStatusCentralized(orderId, 'out_of_stock');
-      toast.error(`Order ${order.order_number} marked as Items No Stock`);
+      console.log('🔴 Marking order as out of stock:', orderId, order.order_number);
+      updateOrderStatusCentralized(orderId, 'out_of_stock', 'button');
+      // Toast notification is handled in updateOrderStatusCentralized for out_of_stock
+    } else {
+      console.error('Order not found:', orderId);
+      toast.error(`Order ${orderId} not found`);
     }
   };
 
@@ -850,6 +901,23 @@ export default function PackerOverview() {
 
   // Centralized status update function - works with buttons and real-time updates
   const updateOrderStatusCentralized = (orderId: string, newStatus: 'pending' | 'assigned' | 'packed' | 'out_of_stock', source: 'button' | 'mobile' | 'api' = 'button') => {
+    // Get order details first
+    const order = orders.find(o => o.id === orderId);
+    if (!order) {
+      console.error(`Order ${orderId} not found`);
+      toast.error(`Order ${orderId} not found`);
+      return;
+    }
+    
+    console.log('🔄 Updating order status:', {
+      orderId,
+      orderNumber: order.order_number,
+      currentStatus: order.status,
+      currentPackingStatus: order.packing_status,
+      newStatus,
+      source
+    });
+    
     // Map packing status to order status
     let orderStatus: 'Placed' | 'Accepted' | 'Packed' | 'Delivered' | 'Items No Stock' | 'Cancelled' | 'Returned' | 'Failed';
     
@@ -870,26 +938,55 @@ export default function PackerOverview() {
         orderStatus = 'Placed';
     }
     
-    // Update the order status
+    // Ensure packer name is preserved when marking as packed
+    // If order has packer ID but no name, resolve it from packers list
+    let packerName = order.assigned_packer_name;
+    if (order.assigned_packer_id && !packerName) {
+      const packer = packers.find(p => p.id === order.assigned_packer_id);
+      if (packer) {
+        packerName = packer.name;
+      }
+    }
+    
+    // Update the order with both status and packing_status
+    // Use updateOrder directly to ensure both fields are updated
+    updateOrder(orderId, {
+      status: orderStatus,
+      packing_status: newStatus,
+      assigned_packer_name: order.assigned_packer_id && packerName ? packerName : order.assigned_packer_name,
+      updated_at: new Date().toISOString()
+    });
+    
+    // Also call updateOrderStatus for consistency
     updateOrderStatus(orderId, orderStatus, newStatus);
     
-    // Get order details for notifications
-    const order = orders.find(o => o.id === orderId);
-    const orderNumber = order?.order_number || orderId;
+    // Force immediate refresh to update UI
+    setRefreshKey(prev => prev + 1);
+    
+    // Also force a delayed refresh to ensure UI updates
+    setTimeout(() => {
+      setRefreshKey(prev => prev + 1);
+    }, 200);
+    
+    // Dispatch event to notify OrderDetail and other components of the update
+    window.dispatchEvent(new CustomEvent('orderStatusUpdated', {
+      detail: { orderId, status: orderStatus, packingStatus: newStatus, packerName: packerName || order.assigned_packer_name }
+    }));
+    
+    const orderNumber = order.order_number || orderId;
     
     // Update packer last active time if order is assigned to a packer
-    if (order?.assigned_packer_id) {
+    if (order.assigned_packer_id) {
       updatePackerLastActive(order.assigned_packer_id);
     }
     
-    // Show different notifications based on source
-    if (source === 'button') {
-    toast.success(`Order status updated to ${newStatus.replace('_', ' ').toUpperCase()}`);
-    } else if (source === 'mobile') {
+    // Show different notifications based on source (don't show duplicate toast for button clicks)
+    if (source === 'mobile') {
       toast.success(`📱 Mobile Update: Order ${orderNumber} - ${newStatus.replace('_', ' ').toUpperCase()}`);
     } else if (source === 'api') {
       toast.success(`🔄 Real-time Update: Order ${orderNumber} - ${newStatus.replace('_', ' ').toUpperCase()}`);
     }
+    // Note: Button source notifications are handled in handleStartOrder, handleCompleteOrder, etc.
     
     // Show special notification for out of stock
     if (newStatus === 'out_of_stock') {
@@ -905,7 +1002,7 @@ export default function PackerOverview() {
     }
     
     // Log for debugging
-    console.log(`Status Update [${source}]: Order ${orderNumber} → ${newStatus} (${orderStatus})`);
+    console.log(`✅ Status Update [${source}]: Order ${orderNumber} → ${newStatus} (${orderStatus})`);
   };
 
   // Legacy function for backward compatibility with buttons
@@ -937,26 +1034,23 @@ export default function PackerOverview() {
   };
 
   const handleConfirmStatusChange = () => {
-    if (newStatus && newPackingStatus && selectedOrders.size > 0) {
+    if (newPackingStatus && selectedOrders.size > 0) {
       selectedOrders.forEach(orderId => {
-      const order = orders.find(o => o.id === orderId);
-      if (order) {
-          updateOrderStatus(orderId, newStatus as any, newPackingStatus as any);
-          console.log(`📝 Manual Status Change: Order ${order.order_number} → ${newStatus} (${newPackingStatus})`);
-        }
+        updateOrderStatusCentralized(
+          orderId,
+          newPackingStatus as 'pending' | 'assigned' | 'packed' | 'out_of_stock'
+        );
       });
       
       toast.success(`Updated status for ${selectedOrders.size} order(s)`);
       setSelectedOrders(new Set());
       setShowStatusChangeDialog(false);
-      setNewStatus('');
       setNewPackingStatus('');
     }
   };
 
   const handleCancelStatusChange = () => {
     setShowStatusChangeDialog(false);
-    setNewStatus('');
     setNewPackingStatus('');
   };
 
@@ -1234,10 +1328,6 @@ export default function PackerOverview() {
           >
             📱 Simulate Mobile Order
           </Button>
-          <Button variant="outline" onClick={() => window.location.reload()}>
-            <RefreshCcw className="h-4 w-4 mr-2" />
-            Refresh
-          </Button>
         </div>
       </div>
 
@@ -1263,6 +1353,11 @@ export default function PackerOverview() {
             ).length}
           </p>
           <p className="text-xs text-muted-foreground">of {packers.length} total</p>
+        </CardContent></Card>
+        <Card><CardContent className="p-4 space-y-1">
+          <p className="text-sm text-muted-foreground">Assigned</p>
+          <p className="text-3xl font-bold">{enrichedOrders.filter(o => o.packing_status === 'assigned').length}</p>
+          <p className="text-xs text-muted-foreground">currently assigned</p>
         </CardContent></Card>
         <Card><CardContent className="p-4 space-y-1">
           <p className="text-sm text-muted-foreground">Pending</p>
@@ -1505,14 +1600,20 @@ export default function PackerOverview() {
                         </Badge>
                       </TableCell>
                       <TableCell className="whitespace-nowrap">
-                        <Badge className={getStatusColor(order.packing_status)}>
-                          {order.packing_status === 'packed' && '✅ '}
-                          {order.packing_status === 'pending' && '⏳ '}
-                          {order.packing_status === 'assigned' && '📋 '}
-                          {order.packing_status === 'out_of_stock' && '🔴 '}
-                          {order.packing_status === 'out_of_stock' ? 'ITEMS NO STOCK' : 
-                           order.packing_status?.replace('_', ' ').toUpperCase() || 'PENDING'}
-                        </Badge>
+                        {order.packing_status === 'cancelled' ? (
+                          <Badge className="bg-red-100 text-red-700 border-red-200">
+                            ❌ CANCELLED
+                          </Badge>
+                        ) : (
+                          <Badge className={getStatusColor(order.packing_status)}>
+                            {order.packing_status === 'packed' && '✅ '}
+                            {order.packing_status === 'pending' && '⏳ '}
+                            {order.packing_status === 'assigned' && '📋 '}
+                            {order.packing_status === 'out_of_stock' && '🔴 '}
+                            {order.packing_status === 'out_of_stock' ? 'ITEMS NO STOCK' :
+                             order.packing_status?.replace('_', ' ').toUpperCase() || 'PENDING'}
+                          </Badge>
+                        )}
                       </TableCell>
                       <TableCell className="whitespace-nowrap">
                         <div className="flex items-center gap-2">
@@ -1677,7 +1778,10 @@ export default function PackerOverview() {
                   <p className="text-2xl font-bold text-orange-600">{p.pendingCount || 0}</p>
                   <p className="text-xs text-orange-600">Pending</p>
                 </div>
-                <div className="text-center p-3 rounded-lg bg-green-100 border border-green-200">
+                <div 
+                  className="text-center p-3 rounded-lg bg-green-100 border border-green-200 cursor-pointer hover:bg-green-200 transition-colors"
+                  onClick={() => navigate(`/order-management/packer-orders/${p.id}`)}
+                >
                   <p className="text-2xl font-bold text-green-600">{p.packedCount || 0}</p>
                   <p className="text-xs text-green-600">Packed</p>
                 </div>
@@ -2064,28 +2168,9 @@ export default function PackerOverview() {
       <Dialog open={showStatusChangeDialog} onOpenChange={setShowStatusChangeDialog}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Change Order Status</DialogTitle>
+            <DialogTitle>Change Packing Status</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <div>
-              <label className="text-sm font-medium mb-2 block">Order Status</label>
-              <Select value={newStatus} onValueChange={setNewStatus}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select order status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Placed">Order Placed</SelectItem>
-                  <SelectItem value="Accepted">Order In Process</SelectItem>
-                  <SelectItem value="Packed">Packed</SelectItem>
-                  <SelectItem value="Dispatched">On The Way</SelectItem>
-                  <SelectItem value="Delivered">Delivered</SelectItem>
-                  <SelectItem value="Items No Stock">Items No Stock</SelectItem>
-                  <SelectItem value="Failed">Undelivered</SelectItem>
-                  <SelectItem value="Returned">Request for Cancellation</SelectItem>
-                  <SelectItem value="Cancelled">Cancel Order</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
             <div>
               <label className="text-sm font-medium mb-2 block">Packing Status</label>
               <Select value={newPackingStatus} onValueChange={setNewPackingStatus}>
@@ -2101,7 +2186,7 @@ export default function PackerOverview() {
               </Select>
             </div>
             <div className="text-sm text-muted-foreground">
-              This will update {selectedOrders.size} selected order(s)
+              This will update the packing status for {selectedOrders.size} selected order(s)
             </div>
           </div>
           <div className="flex justify-end gap-3 pt-4 border-t">
@@ -2110,7 +2195,7 @@ export default function PackerOverview() {
             </Button>
             <Button
               onClick={handleConfirmStatusChange}
-              disabled={!newStatus || !newPackingStatus}
+              disabled={!newPackingStatus}
             >
               Update Status
             </Button>

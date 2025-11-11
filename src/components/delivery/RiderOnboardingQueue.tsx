@@ -1,15 +1,23 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Users, Search, Eye, CheckCircle, XCircle, UserX, Calendar } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Users, Search, Eye, CheckCircle, XCircle, UserX, Calendar, Smartphone, RotateCcw, Hourglass } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
-type RiderStatus = "Pending" | "Active" | "Inactive" | "Rejected";
+type RiderStatus = "Pending" | "Active" | "Inactive" | "Rejected" | "Incompleted";
 
 interface RiderApplication {
   id: string;
@@ -31,64 +39,269 @@ interface RiderApplication {
   account_number?: string;
   ifsc_code?: string;
   account_holder_name?: string;
+  rejection_reason?: string;
 }
+
+type RiderApplicationProgress = {
+  detailsApproved?: boolean;
+  documentsApproved?: boolean;
+  bankApproved?: boolean;
+  approvedDocs?: string[];
+  pendingReuploads?: string[];
+  pendingReuploadReasons?: Record<string, string>;
+  bankReuploadReason?: string;
+  incompleteReason?: string; // For storing incomplete/rejection reason
+};
 
 const RiderOnboardingQueue = () => {
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeTab, setActiveTab] = useState<"all" | "pending" | "active" | "inactive" | "rejected">("all");
+  const location = useLocation();
+  type QueueTab = "pending" | "active" | "inactive" | "rejected" | "incompleted";
+  const validTabs: QueueTab[] = ["pending", "active", "inactive", "rejected", "incompleted"];
+
+  const normalizeTab = (value: unknown): QueueTab | undefined => {
+    if (typeof value === "string" && (validTabs as string[]).includes(value)) {
+      return value as QueueTab;
+    }
+    return undefined;
+  };
+
+  const [activeTab, setActiveTab] = useState<QueueTab>(() => {
+    // Check if we came from rejection flow
+    return normalizeTab((location.state as any)?.activeTab) || "pending";
+  });
   const [selectedRider, setSelectedRider] = useState<RiderApplication | null>(null);
   const [viewDialog, setViewDialog] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [riders, setRiders] = useState<RiderApplication[]>([]);
+  const [riderProgress, setRiderProgress] = useState<Record<string, RiderApplicationProgress>>({});
 
-  // Dummy data
-  const riders: RiderApplication[] = [
-    {
-      id: "1",
-      rider_name: "Rajesh Kumar",
-      rider_id: "RD001",
-      mobile: "+91 98111 11111",
-      city: "Delhi",
-      vehicle_type: "2-Wheeler",
-      license_number: "DL-01-12345678",
-      aadhaar_number: "1234-5678-9012",
-      pan_card: "ABCDE1234F",
-      joining_date: "2025-01-10",
-      status: "Pending",
-      dob: "1995-05-15",
-      address: "123 Main St, Delhi",
-      emergency_contact: "+91 98111 22222",
-      bank_name: "HDFC Bank",
-      account_number: "50200012345678",
-      ifsc_code: "HDFC0001234",
-      account_holder_name: "Rajesh Kumar",
-    },
-    {
-      id: "2",
-      rider_name: "Suresh Kumar",
-      rider_id: "R001",
-      mobile: "+91 98111 11111",
-      city: "Delhi",
-      vehicle_type: "2-Wheeler",
-      license_number: "DL-01-AB-1234",
-      aadhaar_number: "2345-6789-0123",
-      pan_card: "FGHIJ5678K",
-      joining_date: "2025-01-05",
-      status: "Active",
-    },
-    {
-      id: "3",
-      rider_name: "Amit Verma",
-      rider_id: "RD003",
-      mobile: "+91 98111 33333",
-      city: "Mumbai",
-      vehicle_type: "3-Wheeler",
-      license_number: "MH-01-98765432",
-      aadhaar_number: "3456-7890-1234",
-      pan_card: "KLMNO9012P",
-      joining_date: "2025-01-12",
-      status: "Inactive",
-    },
-  ];
+  // Load rider applications from localStorage (no hardcoded data)
+  // Applications come from mobile/web app when riders apply
+  useEffect(() => {
+    const loadApplications = () => {
+      try {
+        const stored = localStorage.getItem('riderApplications');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          setRiders(parsed);
+        } else {
+          // No hardcoded data - start empty, wait for real applications from mobile/web
+          setRiders([]);
+        }
+      } catch (error) {
+        console.error('Error loading rider applications:', error);
+        setRiders([]);
+      }
+    };
+
+    const loadProgress = () => {
+      try {
+        const stored = localStorage.getItem('riderApplicationProgress');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          setRiderProgress(parsed);
+        } else {
+          setRiderProgress({});
+        }
+      } catch (error) {
+        console.error('Error loading rider application progress:', error);
+        setRiderProgress({});
+      }
+    };
+
+    loadApplications();
+    loadProgress();
+
+    // Listen for new application events (when rider applies from mobile/web)
+    const handleNewApplication = (event?: CustomEvent) => {
+      loadApplications();
+      loadProgress();
+      // Show notification with rider name if available
+      const riderName = (event as CustomEvent)?.detail?.rider_name;
+      toast({
+        title: "New Rider Application",
+        description: riderName 
+          ? `${riderName} has submitted a new application` 
+          : "A new rider has submitted an application",
+      });
+    };
+
+    // Listen for custom event (when mobile/web app adds new application)
+    window.addEventListener('newRiderApplication', handleNewApplication as EventListener);
+    
+    // Listen for document reuploads from rider
+    const handleDocumentReuploaded = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      const { riderId, riderName, document } = customEvent.detail || {};
+      
+      if (riderId) {
+        loadApplications();
+        loadProgress();
+        
+        // Show notification when rider reuploads a document
+        toast({
+          title: "Document Reuploaded",
+          description: `${riderName || 'Rider'} has reuploaded ${document || 'document'}. Please review.`,
+        });
+        
+        // Move from Incompleted to Pending when rider reuploads
+        try {
+          const applications = JSON.parse(localStorage.getItem('riderApplications') || '[]');
+          const progress = JSON.parse(localStorage.getItem('riderApplicationProgress') || '{}');
+          
+          const updatedApps = applications.map((r: any) => {
+            if (r.rider_id === riderId) {
+              // When rider reuploads, keep status as Pending (if not already Active or Rejected)
+              // The isIncompleteApplication check will determine if it shows in Incompleted filter
+              if (r.status !== 'Active' && r.status !== 'Rejected') {
+                return { ...r, status: 'Pending' };
+              }
+            }
+            return r;
+          });
+          localStorage.setItem('riderApplications', JSON.stringify(updatedApps));
+          
+          // Update progress to remove from pending reuploads
+          if (progress[riderId]) {
+            const updatedPending = (progress[riderId].pendingReuploads || []).filter((d: string) => d !== document);
+            progress[riderId] = {
+              ...progress[riderId],
+              pendingReuploads: updatedPending
+            };
+            localStorage.setItem('riderApplicationProgress', JSON.stringify(progress));
+          }
+          
+          window.dispatchEvent(new CustomEvent('riderApplicationUpdated', { 
+            detail: { riderId, status: 'Pending', activeTab: 'pending' } 
+          }));
+        } catch {}
+      }
+    };
+    
+    window.addEventListener('documentReuploaded', handleDocumentReuploaded as EventListener);
+    
+    // Listen for localStorage changes (cross-tab sync)
+    window.addEventListener('storage', (e) => {
+      if (e.key === 'riderApplications') {
+        loadApplications();
+        // Show notification if new application was added
+        if (e.newValue) {
+          try {
+            const newApps = JSON.parse(e.newValue);
+            const oldApps = e.oldValue ? JSON.parse(e.oldValue) : [];
+            if (newApps.length > oldApps.length) {
+              const newApp = newApps[newApps.length - 1];
+              toast({
+                title: "New Rider Application",
+                description: `${newApp.rider_name || 'A rider'} has submitted a new application`,
+              });
+            }
+          } catch {}
+        }
+      }
+      if (e.key === 'riderApplicationProgress') {
+        loadProgress();
+      }
+    });
+
+    // Poll for new applications (fallback for mobile app integration)
+    // This checks localStorage periodically to detect new applications
+    let previousCount = 0;
+    const pollInterval = setInterval(() => {
+      try {
+        const stored = localStorage.getItem('riderApplications');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          const currentCount = parsed.length;
+          if (currentCount > previousCount) {
+            // New application detected
+            const newRider = parsed[parsed.length - 1];
+            loadApplications();
+            loadProgress();
+            toast({
+              title: "New Rider Application",
+              description: `${newRider.rider_name || 'A rider'} has submitted a new application`,
+            });
+          }
+          previousCount = currentCount;
+        } else {
+          previousCount = 0;
+        }
+      } catch (error) {
+        console.error('Error polling for new applications:', error);
+      }
+    }, 5000); // Check every 5 seconds
+
+    return () => {
+      window.removeEventListener('newRiderApplication', handleNewApplication as EventListener);
+      window.removeEventListener('documentReuploaded', handleDocumentReuploaded as EventListener);
+      clearInterval(pollInterval);
+    };
+  }, [toast]);
+
+  useEffect(() => {
+    const state = (location.state as any) || {};
+    const desiredTab = normalizeTab(state.activeTab);
+    const storedTab = normalizeTab(localStorage.getItem('riderQueueDefaultTab'));
+
+    if (desiredTab && desiredTab !== activeTab) {
+      setActiveTab(desiredTab);
+      localStorage.removeItem('riderQueueDefaultTab');
+    }
+
+    if (desiredTab) {
+      const { focusRider } = state;
+      navigate(location.pathname, { replace: true, state: focusRider ? { focusRider } : null });
+      return;
+    }
+
+    if (!desiredTab && storedTab && storedTab !== activeTab) {
+      setActiveTab(storedTab);
+      localStorage.removeItem('riderQueueDefaultTab');
+    }
+  }, [location.pathname, location.state, activeTab, navigate]);
+
+  // Helper function to check if a rider application is incomplete
+  // An application is incomplete ONLY if reupload has been requested
+  // Incompleted: Single doc or bank doc, single or multiple docs that need reupload
+  // New applications with unapproved sections should stay in Pending
+  const isIncompleteApplication = useCallback((rider: RiderApplication): boolean => {
+    // Don't mark Active or Rejected riders as incomplete
+    if (rider.status === "Active" || rider.status === "Rejected") {
+      return false;
+    }
+    
+    const progress = riderProgress[rider.rider_id] || {};
+    
+    // Check for pending reuploads (single or multiple docs) - reupload was REQUESTED
+    const hasPendingReuploads = (progress.pendingReuploads || []).length > 0;
+    
+    // Check for bank document reupload request - reupload was REQUESTED
+    const hasBankReupload = !!progress.bankReuploadReason;
+    
+    // Check for incomplete reason (from rejection reason field)
+    const hasIncompleteReason = !!progress.incompleteReason;
+    
+    // An application is incomplete if reupload has been requested OR incomplete reason exists
+    // Unapproved sections alone don't make it incomplete - that's normal for new applications
+    return hasPendingReuploads || hasBankReupload || hasIncompleteReason;
+  }, [riderProgress]);
+
+  const getIncompleteReason = useCallback((rider: RiderApplication): string => {
+    const progress = riderProgress[rider.rider_id] || {};
+    
+    // Only return the incomplete reason (what user wrote in "Rejection Reason" field)
+    // Don't show document reupload reasons here - those are handled separately
+    if (progress.incompleteReason) {
+      return progress.incompleteReason;
+    }
+    
+    // If no incomplete reason, return empty string
+    return '';
+  }, [riderProgress]);
 
   const filteredRiders = riders.filter((rider) => {
     const matchesSearch =
@@ -96,67 +309,482 @@ const RiderOnboardingQueue = () => {
       rider.rider_id.toLowerCase().includes(searchQuery.toLowerCase()) ||
       rider.mobile.includes(searchQuery);
 
-    if (activeTab === "all") return matchesSearch;
-    return matchesSearch && rider.status.toLowerCase() === activeTab;
+    if (activeTab === "pending") {
+      // Pending: New rider applications waiting for review (status is Pending AND not incomplete)
+      return matchesSearch && rider.status === "Pending" && !isIncompleteApplication(rider);
+    }
+    if (activeTab === "incompleted") {
+      // Incompleted: Has pending reuploads or unapproved sections (documents, bank, details)
+      return matchesSearch && isIncompleteApplication(rider);
+    }
+    if (activeTab === "active") {
+      // Active: Approved and onboarded riders (can get runsheets)
+      return matchesSearch && rider.status === "Active";
+    }
+    if (activeTab === "inactive") {
+      // Inactive: Riders not available (can toggle to active)
+      return matchesSearch && rider.status === "Inactive";
+    }
+    if (activeTab === "rejected") {
+      // Rejected: Multiple reupload requests, still issues, so rejected
+      return matchesSearch && rider.status === "Rejected";
+    }
+    return false;
   });
 
-  const handleViewRider = (rider: RiderApplication) => {
-    setSelectedRider(rider);
-    setViewDialog(true);
+  const handleTabChange = (value: string) => {
+    const normalized = normalizeTab(value);
+    if (!normalized) return;
+    setActiveTab(normalized);
+    localStorage.setItem('riderQueueDefaultTab', normalized);
   };
 
-  const handleApprove = (riderId: string) => {
-    toast({ title: "Rider Approved", description: `Rider ${riderId} has been activated` });
-    setViewDialog(false);
-  };
+  const showIncompleteColumn = activeTab === "incompleted";
+  const showRejectionColumn = activeTab === "rejected";
+  const showActiveColumn = activeTab === "active" || activeTab === "inactive";
+  const tableColumnCount = 6 + (showIncompleteColumn ? 1 : 0) + (showRejectionColumn ? 1 : 0) + (showActiveColumn ? 1 : 0);
 
-  const handleReject = (riderId: string) => {
-    toast({ title: "Rider Rejected", description: `Rider ${riderId} has been rejected`, variant: "destructive" });
-    setViewDialog(false);
-  };
-
-  const handleDeactivate = (riderId: string) => {
-    toast({ title: "Rider Deactivated", description: `Rider ${riderId} has been deactivated` });
-    setViewDialog(false);
-  };
-
-  const getStatusBadgeVariant = (status: RiderStatus) => {
-    switch (status) {
-      case "Active":
-        return "default";
-      case "Pending":
-        return "secondary";
-      case "Inactive":
-        return "outline";
-      case "Rejected":
-        return "destructive";
-      default:
-        return "outline";
+  // Function to get long rider ID from short ID
+  const getLongRiderId = (shortId: string): string | null => {
+    try {
+      const key = 'riderIdShortMap';
+      const stored = localStorage.getItem(key);
+      const map: Record<string, string> = stored ? JSON.parse(stored) : {};
+      
+      // Find the long ID that maps to this short ID
+      for (const [longId, short] of Object.entries(map)) {
+        if (short === shortId) {
+          return longId;
+        }
+      }
+      
+      // If not found in map, check if it's already a long ID
+      if (shortId.length > 10) {
+        return shortId;
+      }
+      
+      return null;
+    } catch {
+      return null;
     }
   };
 
-  const stats = {
-    total: riders.length,
-    pending: riders.filter((r) => r.status === "Pending").length,
-    active: riders.filter((r) => r.status === "Active").length,
-    inactive: riders.filter((r) => r.status === "Inactive").length,
-    rejected: riders.filter((r) => r.status === "Rejected").length,
+  const handleViewRider = (rider: RiderApplication) => {
+    // Navigate to details screen with short ID in URL
+    const shortId = getShortRiderId(rider.rider_id);
+    navigate(`/delivery/rider-onboarding-queue/${shortId}`, { state: { rider } });
   };
+
+  const handleApprove = (riderId: string) => {
+    // Find the rider to approve
+    const riderToApprove = riders.find(r => r.rider_id === riderId);
+    if (!riderToApprove) {
+      toast({ title: "Error", description: "Rider not found", variant: "destructive" });
+      return;
+    }
+
+    // Update application status in localStorage
+    const updatedRiders = riders.map(r => 
+      r.rider_id === riderId ? { ...r, status: "Active" as RiderStatus } : r
+    );
+    setRiders(updatedRiders);
+    localStorage.setItem('riderApplications', JSON.stringify(updatedRiders));
+
+    // Store approved rider in localStorage so it can be included in Total Riders count
+    // TODO: When API is ready, approved riders will be automatically in the main riders table
+    const approvedRiderData = {
+      ...riderToApprove,
+      status: "Active",
+      zone: riderToApprove.city || "Unassigned"
+    };
+    
+    // Get existing approved riders from localStorage
+    const existingApprovedRiders = JSON.parse(localStorage.getItem('approvedRidersFromOnboarding') || '[]');
+    
+    // Add this rider if not already there (avoid duplicates)
+    const riderExists = existingApprovedRiders.find((r: any) => r.rider_id === riderId);
+    if (!riderExists) {
+      existingApprovedRiders.push(approvedRiderData);
+      localStorage.setItem('approvedRidersFromOnboarding', JSON.stringify(existingApprovedRiders));
+    }
+    
+    toast({ 
+      title: "Rider Approved", 
+      description: `Rider ${riderToApprove.rider_name} (${riderId}) has been activated and added to Total Riders count` 
+    });
+    setViewDialog(false);
+    setRefreshKey(k => k + 1);
+    
+    // Dispatch event to notify other components (like RiderOverview, CreateRunsheet) that a rider was approved
+    window.dispatchEvent(new Event('riderApproved'));
+    window.dispatchEvent(new CustomEvent('riderApplicationUpdated', { detail: { riderId, status: 'Active' } }));
+  };
+
+  const handleReject = (riderId: string) => {
+    const updatedRiders = riders.map(r => 
+      r.rider_id === riderId ? { ...r, status: "Rejected" as RiderStatus } : r
+    );
+    setRiders(updatedRiders);
+    localStorage.setItem('riderApplications', JSON.stringify(updatedRiders));
+    toast({ title: "Rider Rejected", description: `Rider ${riderId} has been rejected`, variant: "destructive" });
+    setViewDialog(false);
+    setRefreshKey(k => k + 1);
+    window.dispatchEvent(new CustomEvent('riderApplicationUpdated', { detail: { riderId, status: 'Rejected' } }));
+  };
+
+  const handleDeactivate = (riderId: string) => {
+    const updatedRiders = riders.map(r => 
+      r.rider_id === riderId ? { ...r, status: "Inactive" as RiderStatus } : r
+    );
+    setRiders(updatedRiders);
+    localStorage.setItem('riderApplications', JSON.stringify(updatedRiders));
+    toast({ title: "Rider Deactivated", description: `Rider ${riderId} has been deactivated` });
+    setViewDialog(false);
+    setRefreshKey(k => k + 1);
+    window.dispatchEvent(new CustomEvent('riderApplicationUpdated', { detail: { riderId, status: 'Inactive' } }));
+  };
+
+  const handleToggleActive = (rider: RiderApplication, e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation(); // Prevent row click navigation
+    }
+    
+    const newStatus: RiderStatus = rider.status === "Active" ? "Inactive" : "Active";
+    const updatedRiders = riders.map(r => 
+      r.rider_id === rider.rider_id ? { ...r, status: newStatus } : r
+    );
+    setRiders(updatedRiders);
+    localStorage.setItem('riderApplications', JSON.stringify(updatedRiders));
+    
+    // Also update approved riders if it's in that list
+    try {
+      const approvedRiders = JSON.parse(localStorage.getItem('approvedRidersFromOnboarding') || '[]');
+      const updatedApproved = approvedRiders.map((r: any) => 
+        r.rider_id === rider.rider_id ? { ...r, status: newStatus } : r
+      );
+      localStorage.setItem('approvedRidersFromOnboarding', JSON.stringify(updatedApproved));
+    } catch {}
+    
+    toast({ 
+      title: newStatus === "Active" ? "Rider Activated" : "Rider Deactivated", 
+      description: `${rider.rider_name} is now ${newStatus.toLowerCase()}. ${newStatus === "Active" ? "Can receive runsheet assignments." : "Cannot receive runsheet assignments."}` 
+    });
+    
+    // Dispatch event to notify other components
+    window.dispatchEvent(new CustomEvent('riderApplicationUpdated', { detail: { riderId: rider.rider_id, status: newStatus } }));
+  };
+
+  // Simulate mobile app adding a new rider application (for testing)
+  const handleSimulateMobile = () => {
+    const testRiders = [
+      {
+        id: Date.now().toString(),
+        rider_name: "Rajesh Kumar",
+        rider_id: `RD${Date.now()}`,
+        mobile: "+91 98765 43210",
+        city: "Delhi",
+        vehicle_type: "2-Wheeler" as const,
+        license_number: `DL-01-${Math.floor(Math.random() * 10000)}`,
+        aadhaar_number: `${Math.floor(Math.random() * 10000)}-${Math.floor(Math.random() * 10000)}-${Math.floor(Math.random() * 10000)}`,
+        pan_card: `ABCDE${Math.floor(Math.random() * 10000)}F`,
+        joining_date: new Date().toISOString().split('T')[0],
+        status: "Pending" as RiderStatus,
+        dob: "1995-05-15",
+        address: "123 Main Street, Delhi",
+        emergency_contact: "+91 98765 12345",
+        email: `rajesh${Date.now()}@example.com`,
+        bank_name: "HDFC Bank",
+        account_number: `${Math.floor(Math.random() * 10000000000)}`,
+        ifsc_code: "HDFC0001234",
+        account_holder_name: "Rajesh Kumar",
+        _simulated: true, // Flag to identify simulated riders
+      },
+      {
+        id: (Date.now() + 1).toString(),
+        rider_name: "Amit Singh",
+        rider_id: `RD${Date.now() + 1}`,
+        mobile: "+91 98765 43211",
+        city: "Mumbai",
+        vehicle_type: "3-Wheeler" as const,
+        license_number: `MH-01-${Math.floor(Math.random() * 10000)}`,
+        aadhaar_number: `${Math.floor(Math.random() * 10000)}-${Math.floor(Math.random() * 10000)}-${Math.floor(Math.random() * 10000)}`,
+        pan_card: `FGHIJ${Math.floor(Math.random() * 10000)}K`,
+        joining_date: new Date().toISOString().split('T')[0],
+        status: "Pending" as RiderStatus,
+        dob: "1990-08-20",
+        address: "456 Park Avenue, Mumbai",
+        emergency_contact: "+91 98765 12346",
+        email: `amit${Date.now()}@example.com`,
+        bank_name: "SBI Bank",
+        account_number: `${Math.floor(Math.random() * 10000000000)}`,
+        ifsc_code: "SBIN0001234",
+        account_holder_name: "Amit Singh",
+        _simulated: true, // Flag to identify simulated riders
+      },
+    ];
+
+    // Pick random rider for this simulation
+    const newRider = testRiders[Math.floor(Math.random() * testRiders.length)];
+    
+    // Add to localStorage
+    const existing = JSON.parse(localStorage.getItem('riderApplications') || '[]');
+    existing.push(newRider);
+    localStorage.setItem('riderApplications', JSON.stringify(existing));
+    
+    // Update state
+    setRiders(existing);
+    setRefreshKey(k => k + 1);
+    
+    // Show notification
+    toast({
+      title: "New Rider Application",
+      description: `${newRider.rider_name} has submitted a new application`,
+    });
+    
+    // Dispatch event (simulating mobile app)
+    window.dispatchEvent(new CustomEvent('newRiderApplication', { 
+      detail: { rider_name: newRider.rider_name } 
+    }));
+  };
+
+  // Reset only simulated riders (keep existing real riders)
+  const handleResetRiders = () => {
+    try {
+      // Get all applications
+      const allApplications = JSON.parse(localStorage.getItem('riderApplications') || '[]');
+      
+      // Filter out only simulated riders (keep existing real riders)
+      const realRiders = allApplications.filter((rider: any) => !rider._simulated);
+      
+      // Update localStorage with only real riders
+      localStorage.setItem('riderApplications', JSON.stringify(realRiders));
+      
+      // Update state
+      setRiders(realRiders);
+      setRefreshKey(k => k + 1);
+      
+      // Count how many were deleted
+      const deletedCount = allApplications.length - realRiders.length;
+      
+      // Show notification
+      toast({
+        title: "Simulated Riders Reset",
+        description: deletedCount > 0 
+          ? `${deletedCount} simulated rider(s) deleted. ${realRiders.length} existing rider(s) kept.`
+          : "No simulated riders to delete. All existing riders are kept.",
+      });
+      
+      // Dispatch events to update other screens
+      window.dispatchEvent(new Event('riderApproved'));
+    } catch (error) {
+      console.error('Error resetting simulated riders:', error);
+      toast({
+        title: "Error",
+        description: "Failed to reset simulated riders",
+        variant: "destructive",
+      });
+    }
+  };
+
+const getStatusBadgeStyles = (status: RiderStatus, isIncomplete: boolean) => {
+  // Always show "Pending" for incomplete applications or if status is "Incompleted"
+  if (status === "Incompleted" || isIncomplete) {
+    return {
+      className: "bg-amber-100 text-amber-600 border-amber-200",
+      icon: Hourglass,
+      label: "Pending"
+    };
+  }
+
+  switch (status) {
+    case "Active":
+      return {
+        className: "bg-green-100 text-green-700 border-green-200",
+        icon: CheckCircle,
+        label: "Active"
+      };
+    case "Pending":
+      return {
+        className: "bg-amber-100 text-amber-600 border-amber-200",
+        icon: Hourglass,
+        label: "Pending"
+      };
+    case "Inactive":
+      return {
+        className: "bg-slate-100 text-slate-600 border-slate-200",
+        icon: UserX,
+        label: "Inactive"
+      };
+    case "Rejected":
+      return {
+        className: "bg-red-100 text-red-600 border-red-200",
+        icon: XCircle,
+        label: "Rejected"
+      };
+    default:
+      // Default case handles any other status (including "Incompleted" which is already handled above)
+      return {
+        className: "bg-muted text-muted-foreground border-muted",
+        icon: Hourglass,
+        label: "Pending"
+      };
+  }
+};
+
+  // Stable short ID mapping: maps any long riderId to RD### (persisted)
+  const getShortRiderId = (riderId: string): string => {
+    try {
+      const key = 'riderIdShortMap';
+      const stored = localStorage.getItem(key);
+      const map: Record<string, string> = stored ? JSON.parse(stored) : {};
+      // Return existing mapping if present
+      if (map[riderId]) return map[riderId];
+
+      // If already short like RD001/R001, keep as-is and store
+      if (/^[A-Z]{1,3}\d{1,4}$/.test(riderId)) {
+        map[riderId] = riderId;
+        localStorage.setItem(key, JSON.stringify(map));
+        return riderId;
+      }
+
+      // Generate next RD### value
+      let max = 0;
+      Object.values(map).forEach((val) => {
+        const m = val.match(/^RD(\d{3,})$/);
+        if (m) {
+          const n = parseInt(m[1], 10);
+          if (!Number.isNaN(n) && n > max) max = n;
+        }
+      });
+      const next = max + 1;
+      const code = `RD${String(next).padStart(3, '0')}`;
+      map[riderId] = code;
+      localStorage.setItem(key, JSON.stringify(map));
+      return code;
+    } catch {
+      // Fallback if storage not available
+      return riderId;
+    }
+  };
+
+  // Compute stats from current riders state
+  const mergedRiders = useMemo(() => {
+    // Use current riders state (loaded from localStorage)
+    return riders;
+  }, [riders, refreshKey]);
+
+  const stats = useMemo(() => ({
+    total: mergedRiders.length,
+    // Pending: New applications waiting for review (status is Pending AND not incomplete)
+    pending: mergedRiders.filter((r) => r.status === "Pending" && !isIncompleteApplication(r)).length,
+    // Active: Approved and onboarded riders (can get runsheets)
+    active: mergedRiders.filter((r) => r.status === "Active").length,
+    // Inactive: Riders not available (can toggle to active)
+    inactive: mergedRiders.filter((r) => r.status === "Inactive").length,
+    // Rejected: Multiple reupload requests, still issues
+    rejected: mergedRiders.filter((r) => r.status === "Rejected").length,
+    // Incompleted: Has pending reuploads or unapproved sections
+    incompleted: mergedRiders.filter((r) => isIncompleteApplication(r)).length,
+  }), [mergedRiders, isIncompleteApplication]);
+
+  // Refresh counts when a rider is approved/rejected or when localStorage changes (e.g., across tabs)
+  useEffect(() => {
+    const refreshRiders = () => {
+      const stored = localStorage.getItem('riderApplications');
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored);
+          setRiders(parsed);
+          return;
+        } catch {}
+      }
+      setRiders([]);
+    };
+
+    const refreshProgress = () => {
+      const stored = localStorage.getItem('riderApplicationProgress');
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored);
+          setRiderProgress(parsed);
+          return;
+        } catch {}
+      }
+      setRiderProgress({});
+    };
+
+    const onApproved = () => {
+      setRefreshKey((k) => k + 1);
+      refreshRiders();
+      refreshProgress();
+    };
+    const onUpdated = (event?: Event) => {
+      setRefreshKey((k) => k + 1);
+      refreshRiders();
+      refreshProgress();
+      const nextTab = (event as CustomEvent)?.detail?.activeTab as typeof activeTab | undefined;
+      if (nextTab && nextTab !== activeTab) {
+        setActiveTab(nextTab);
+      }
+    };
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'approvedRidersFromOnboarding' || e.key === 'riderApplications') {
+        setRefreshKey((k) => k + 1);
+        if (e.key === 'riderApplications' && e.newValue) {
+          try {
+            const parsed = JSON.parse(e.newValue);
+            setRiders(parsed);
+          } catch {}
+        }
+      }
+      if (e.key === 'riderApplicationProgress' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          setRiderProgress(parsed);
+        } catch {}
+      }
+    };
+    window.addEventListener('riderApproved', onApproved);
+    window.addEventListener('riderApplicationUpdated', onUpdated);
+    window.addEventListener('riderApplicationProgressUpdated', onUpdated as EventListener);
+    window.addEventListener('storage', onStorage);
+    return () => {
+      window.removeEventListener('riderApproved', onApproved);
+      window.removeEventListener('riderApplicationUpdated', onUpdated);
+      window.removeEventListener('riderApplicationProgressUpdated', onUpdated as EventListener);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, [activeTab]);
 
   return (
     <div className="min-h-screen bg-muted/30">
-      <header className="bg-card border-b sticky top-0 z-10 shadow-sm">
-        <div className="container mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-foreground">Rider Onboarding Queue</h1>
-              <p className="text-sm text-muted-foreground">Manage and review rider applications</p>
-            </div>
+      {/* Page header - matches Rider Overview */}
+      <main>
+        <div className="flex items-center justify-between mb-4 sm:mb-5 md:mb-6">
+          <div>
+            <h1 className="text-2xl font-semibold text-foreground">Rider Onboarding Queue</h1>
+            <p className="text-sm text-muted-foreground">Manage and review rider applications</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button 
+              variant="outline" 
+              onClick={handleSimulateMobile}
+              className="flex items-center gap-2"
+            >
+              <Smartphone className="h-4 w-4" />
+              Simulate Mobile
+            </Button>
+            <Button 
+              variant="destructive" 
+              onClick={handleResetRiders}
+              className="flex items-center gap-2"
+            >
+              <RotateCcw className="h-4 w-4" />
+              Reset Riders
+            </Button>
           </div>
         </div>
-      </header>
 
-      <main className="container mx-auto px-6 py-8">
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
           <Card>
@@ -202,7 +830,7 @@ const RiderOnboardingQueue = () => {
                   <p className="text-sm text-muted-foreground mb-1">Inactive</p>
                   <p className="text-3xl font-bold text-muted-foreground">{stats.inactive}</p>
                 </div>
-                <UserX className="h-8 w-8 text-muted-foreground opacity-50" />
+                <Users className="h-8 w-8 text-muted-foreground opacity-50" />
               </div>
             </CardContent>
           </Card>
@@ -233,13 +861,18 @@ const RiderOnboardingQueue = () => {
                   className="pl-10"
                 />
               </div>
-              <div className="flex gap-2">
-                <Button variant={activeTab === "all" ? "default" : "outline"} onClick={() => setActiveTab("all")} size="sm">All</Button>
-                <Button variant={activeTab === "pending" ? "default" : "outline"} onClick={() => setActiveTab("pending")} size="sm">Pending</Button>
-                <Button variant={activeTab === "active" ? "default" : "outline"} onClick={() => setActiveTab("active")} size="sm">Active</Button>
-                <Button variant={activeTab === "inactive" ? "default" : "outline"} onClick={() => setActiveTab("inactive")} size="sm">Inactive</Button>
-                <Button variant={activeTab === "rejected" ? "default" : "outline"} onClick={() => setActiveTab("rejected")} size="sm">Rejected</Button>
-              </div>
+              <Select value={activeTab} onValueChange={handleTabChange}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Filter by status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="inactive">Inactive</SelectItem>
+                  <SelectItem value="rejected">Rejected</SelectItem>
+                  <SelectItem value="incompleted">Incompleted</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </CardContent>
         </Card>
@@ -253,59 +886,96 @@ const RiderOnboardingQueue = () => {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead>Date</TableHead>
                   <TableHead>Rider Name</TableHead>
-                  <TableHead>Rider ID</TableHead>
                   <TableHead>Mobile</TableHead>
                   <TableHead>City</TableHead>
                   <TableHead>Vehicle Type</TableHead>
-                  <TableHead>Joining Date</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Actions</TableHead>
+                  {showIncompleteColumn && <TableHead>Incomplete Reason</TableHead>}
+                  {showRejectionColumn && <TableHead>Rejection Reason</TableHead>}
+                  {showActiveColumn && <TableHead>Active</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredRiders.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No riders found</TableCell>
+                    <TableCell colSpan={tableColumnCount} className="text-center py-8 text-muted-foreground">No riders found</TableCell>
                   </TableRow>
                 ) : (
                   filteredRiders.map((rider) => (
-                    <TableRow key={rider.id}>
-                      <TableCell className="font-medium">{rider.rider_name}</TableCell>
-                      <TableCell>{rider.rider_id}</TableCell>
-                      <TableCell>{rider.mobile}</TableCell>
-                      <TableCell>{rider.city}</TableCell>
-                      <TableCell>{rider.vehicle_type}</TableCell>
+                    <TableRow
+                      key={rider.id}
+                      onClick={() => handleViewRider(rider)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          handleViewRider(rider);
+                        }
+                      }}
+                      tabIndex={0}
+                      role="button"
+                      className="cursor-pointer hover:bg-muted/40 focus:bg-muted/40 focus:outline-none transition-colors"
+                    >
                       <TableCell>{rider.joining_date}</TableCell>
                       <TableCell>
-                        <Badge variant={getStatusBadgeVariant(rider.status)}>{rider.status}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex gap-2">
-                          <Button size="sm" variant="outline" onClick={() => handleViewRider(rider)}>
-                            <Eye className="h-3 w-3 mr-1" />
-                            View
-                          </Button>
-                          {rider.status === "Pending" && (
-                            <>
-                              <Button size="sm" variant="default" onClick={() => handleApprove(rider.rider_id)}>
-                                <CheckCircle className="h-3 w-3 mr-1" />
-                                Approve
-                              </Button>
-                              <Button size="sm" variant="destructive" onClick={() => handleReject(rider.rider_id)}>
-                                <XCircle className="h-3 w-3 mr-1" />
-                                Reject
-                              </Button>
-                            </>
-                          )}
-                          {rider.status === "Active" && (
-                            <Button size="sm" variant="outline" onClick={() => handleDeactivate(rider.rider_id)}>
-                              <UserX className="h-3 w-3 mr-1" />
-                              Deactivate
-                            </Button>
+                        <div className="flex flex-col">
+                          <span className="font-medium">{rider.rider_name}</span>
+                          {rider.status === 'Active' && (
+                            <span className="text-xs text-muted-foreground">{getShortRiderId(rider.rider_id)}</span>
                           )}
                         </div>
                       </TableCell>
+                      <TableCell>{rider.mobile}</TableCell>
+                      <TableCell>{rider.city}</TableCell>
+                      <TableCell>{rider.vehicle_type}</TableCell>
+                      <TableCell>
+                        {(() => {
+                          const isIncomplete = isIncompleteApplication(rider);
+                          // Always show "Pending" for incomplete applications, regardless of rider.status
+                          // Also handle case where rider.status might be "Incompleted" (from old data)
+                          const effectiveStatus = (isIncomplete || rider.status === "Incompleted") ? "Pending" : rider.status;
+                          const { className, icon: Icon } = getStatusBadgeStyles(effectiveStatus, isIncomplete);
+                          // Always use "Pending" label for incomplete applications - never show "Incompleted"
+                          const displayLabel = (isIncomplete || rider.status === "Incompleted") ? "Pending" : 
+                                             (rider.status === "Active" ? "Active" :
+                                              rider.status === "Inactive" ? "Inactive" :
+                                              rider.status === "Rejected" ? "Rejected" : "Pending");
+                          return (
+                            <Badge className={`inline-flex items-center gap-2 px-3 py-1 text-xs font-semibold border ${className}`}>
+                              <Icon className="h-3.5 w-3.5" />
+                              <span className="uppercase tracking-wide">{displayLabel}</span>
+                            </Badge>
+                          );
+                        })()}
+                      </TableCell>
+                      {showIncompleteColumn && (
+                        <TableCell>
+                          {isIncompleteApplication(rider) && getIncompleteReason(rider) ? (
+                            <span className="text-sm text-destructive italic">{getIncompleteReason(rider)}</span>
+                          ) : (
+                            <span className="text-sm text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                      )}
+                      {showRejectionColumn && (
+                        <TableCell>
+                          {rider.status === 'Rejected' && rider.rejection_reason ? (
+                            <span className="text-sm text-destructive italic">{rider.rejection_reason}</span>
+                          ) : (
+                            <span className="text-sm text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                      )}
+                      {showActiveColumn && (
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          <Switch
+                            checked={rider.status === "Active"}
+                            onCheckedChange={() => handleToggleActive(rider)}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        </TableCell>
+                      )}
                     </TableRow>
                   ))
                 )}

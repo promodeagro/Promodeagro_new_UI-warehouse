@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -40,6 +40,7 @@ import {
   Phone,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { orders as dummyOrders, runsheets as dummyRunsheets, riders } from "@/data/dummyData";
 
 const RunsheetDetails = () => {
   const { id } = useParams();
@@ -54,57 +55,79 @@ const RunsheetDetails = () => {
   const [isVerified, setIsVerified] = useState(false);
   const [isClosed, setIsClosed] = useState(false);
 
-  // Dummy data
-  const runsheetData = {
-    id: id || "RS-2025-001",
-    status: "In Progress" as const,
-    rider: { name: "Suresh Kumar", id: "R001", phone: "+91 98111 11111" },
-    date: "2025-01-14",
-    orders: [
-      {
-        id: "ORD-001",
-        customer_name: "Rahul Verma",
-        address: "123 MG Road, Delhi",
-        pincode: "110001",
-        payment_mode: "COD",
-        delivery_status: "Delivered",
-        amount: 2400,
-      },
-      {
-        id: "ORD-002",
-        customer_name: "Priya Sharma",
-        address: "456 Park Street, Delhi",
-        pincode: "110002",
-        payment_mode: "COD",
-        delivery_status: "Delivered",
-        amount: 3200,
-      },
-      {
-        id: "ORD-003",
-        customer_name: "Amit Patel",
-        address: "789 Ring Road, Delhi",
-        pincode: "110003",
-        payment_mode: "Online",
-        delivery_status: "Delivered",
-        amount: 1800,
-      },
-      {
-        id: "ORD-004",
-        customer_name: "Sneha Gupta",
-        address: "321 Mall Road, Delhi",
-        pincode: "110004",
-        payment_mode: "COD",
-        delivery_status: "Pending",
-        amount: 4500,
-      },
-    ],
-  };
+  // Load runsheet and orders dynamically (dummy data + localStorage overrides)
+  const { runsheet, runsheetOrders } = useMemo(() => {
+    // Merge runsheets: dummy + localStorage (created runsheets)
+    let allRunsheets = [...dummyRunsheets];
+    try {
+      const storedRunsheets = localStorage.getItem('warehouse-runsheets');
+      if (storedRunsheets) {
+        const parsed = JSON.parse(storedRunsheets);
+        const existingIds = new Set(allRunsheets.map(r => r.id));
+        const onlyNew = Array.isArray(parsed) ? parsed.filter((r: any) => !existingIds.has(r.id)) : [];
+        allRunsheets = [...allRunsheets, ...onlyNew];
+      }
+    } catch {}
 
-  const expectedPrepaid = runsheetData.orders
+    const currentRunsheet = allRunsheets.find(r => r.id === id) || allRunsheets[0] || null;
+
+    // Merge orders: dummy + localStorage updates
+    let allOrders = [...dummyOrders];
+    try {
+      const storedOrders = localStorage.getItem('warehouse-orders');
+      if (storedOrders) {
+        const parsed = JSON.parse(storedOrders);
+        const map = new Map(allOrders.map(o => [o.id, o]));
+        parsed.forEach((o: any) => map.set(o.id, o));
+        allOrders = Array.from(map.values());
+      }
+    } catch {}
+
+    const orderIds = currentRunsheet?.orders_assigned || [];
+    const rsOrders = orderIds
+      .map(oid => allOrders.find(o => o.id === oid))
+      .filter(Boolean)
+      .map(o => {
+        // Derive delivery status:
+        // - If order is Delivered → 'Delivered'
+        // - Else if runsheet is not Completed (Created/In Transit) → 'On the way'
+        // - Else fallback to the order's status or 'Pending'
+        let deliveryStatus = 'Pending';
+        const orderStatus = (o!.status || '').toString();
+        if (orderStatus.toLowerCase() === 'delivered') {
+          deliveryStatus = 'Delivered';
+        } else if ((currentRunsheet?.status || '').toString().toLowerCase() !== 'completed') {
+          deliveryStatus = 'On the way';
+        } else if (orderStatus) {
+          deliveryStatus = orderStatus;
+        }
+
+        return {
+          id: o!.order_number || o!.id,
+          customer_name: o!.customer_name,
+          address: o!.address,
+          pincode: (o!.address || '').match(/(\d{6})/)?.[1] || '',
+          payment_mode: o!.payment_mode === 'Online' ? 'Online' : 'COD',
+          delivery_status: deliveryStatus,
+          amount: o!.total_amount || 0,
+        };
+      });
+
+    return { runsheet: currentRunsheet, runsheetOrders: rsOrders };
+  }, [id]);
+
+  const riderInfo = useMemo(() => riders.find(r => r.id === runsheet?.rider_id), [runsheet]);
+
+  // Defensive guards to avoid blank screen
+  const safeRunsheetId = runsheet?.id || id || 'RS-UNKNOWN';
+  const safeRunDate = runsheet?.run_date || new Date().toISOString().split('T')[0];
+  const ordersList = Array.isArray(runsheetOrders) ? runsheetOrders : [];
+
+  const expectedPrepaid = runsheetOrders
     .filter(o => o.payment_mode === "Online")
     .reduce((sum, o) => sum + o.amount, 0);
 
-  const expectedCOD = runsheetData.orders
+  const expectedCOD = runsheetOrders
     .filter(o => o.payment_mode === "COD")
     .reduce((sum, o) => sum + o.amount, 0);
 
@@ -199,7 +222,7 @@ const RunsheetDetails = () => {
                 <ArrowLeft className="h-5 w-5" />
               </Button>
               <div>
-                <h1 className="text-2xl font-bold text-foreground">{runsheetData.id}</h1>
+                <h1 className="text-2xl font-bold text-foreground">{safeRunsheetId}</h1>
                 <p className="text-sm text-muted-foreground">Runsheet Details & Verification</p>
               </div>
             </div>
@@ -207,16 +230,16 @@ const RunsheetDetails = () => {
               <div className="text-right mr-3">
                 <div className="flex items-center gap-2">
                   <User className="h-4 w-4 text-muted-foreground" />
-                  <span className="font-medium">{runsheetData.rider.name}</span>
-                  <span className="text-muted-foreground">({runsheetData.rider.id})</span>
+                  <span className="font-medium">{riderInfo?.name}</span>
+                  <span className="text-muted-foreground">({riderInfo?.id})</span>
                 </div>
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Calendar className="h-4 w-4" />
-                  <span>{runsheetData.date}</span>
+                  <span>{safeRunDate}</span>
                 </div>
               </div>
               <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
-                {runsheetData.status}
+                {runsheet?.status === 'In Transit' ? 'In Progress' : runsheet?.status || 'Created'}
               </Badge>
             </div>
           </div>
@@ -235,7 +258,7 @@ const RunsheetDetails = () => {
                 <TableRow>
                   <TableHead>Order ID</TableHead>
                   <TableHead>Customer Name</TableHead>
-                  <TableHead>Address / Pincode</TableHead>
+                  <TableHead>Address</TableHead>
                   <TableHead>Payment Mode</TableHead>
                   <TableHead>Delivery Status</TableHead>
                   <TableHead>Amount</TableHead>
@@ -243,22 +266,29 @@ const RunsheetDetails = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {runsheetData.orders.map((order) => (
+                {ordersList.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center py-6 text-muted-foreground">
+                      No orders found for this runsheet
+                    </TableCell>
+                  </TableRow>
+                ) : ordersList.map((order) => (
                   <TableRow key={order.id}>
                     <TableCell className="font-medium">{order.id}</TableCell>
                     <TableCell>{order.customer_name}</TableCell>
                     <TableCell>
-                      <div className="text-sm">
-                        <div>{order.address}</div>
-                        <div className="text-muted-foreground">{order.pincode}</div>
-                      </div>
+                      <div className="text-sm">{order.address}</div>
                     </TableCell>
                     <TableCell>
-                      <Badge 
-                        variant="outline"
-                        className={order.payment_mode === "COD" ? "bg-orange-50 text-orange-700" : "bg-blue-50 text-blue-700"}
+                      <Badge
+                        variant="default"
+                        className={
+                          order.payment_mode === "Online"
+                            ? "bg-green-600 text-white hover:bg-green-700"
+                            : "bg-black text-white hover:bg-black/90"
+                        }
                       >
-                        {order.payment_mode}
+                        {order.payment_mode === "Online" ? "Prepaid" : "COD"}
                       </Badge>
                     </TableCell>
                     <TableCell>
@@ -273,8 +303,10 @@ const RunsheetDetails = () => {
                         className={
                           order.delivery_status === "Delivered"
                             ? "bg-green-600"
+                            : order.delivery_status === "On the way"
+                            ? "bg-blue-600 text-white"
                             : order.delivery_status === "Pending"
-                            ? "bg-amber-600"
+                            ? "bg-amber-600 text-white"
                             : ""
                         }
                       >
