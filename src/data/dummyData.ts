@@ -7,6 +7,7 @@ export interface OrderItem {
   product_id: string;
   product_name: string;
   quantity: number;
+  unit?: string; // Unit of measurement (e.g., "1000unit", "kg", "piece")
   price: number;
   subtotal: number;
   is_substituted: boolean;
@@ -62,6 +63,8 @@ export interface Runsheet {
   rider_id: string;
   rider_name: string;
   run_date: string;
+  departure_time?: string; // Time from Create Runsheet screen (e.g., "09:00" or "09:00 AM")
+  created_at?: string; // Timestamp when runsheet was created (ISO string) - fixed at creation time
   orders_assigned: string[];
   route_zone: string;
   status: 'Created' | 'In Transit' | 'Completed';
@@ -84,10 +87,10 @@ export const orders: Order[] = [
     payment_mode: 'Online',
     status: 'Packed',
     items: [
-      { id: 'OI001', product_id: 'P001', product_name: 'Organic Tomatoes', quantity: 2, price: 45, subtotal: 90, is_substituted: false },
-      { id: 'OI002', product_id: 'P004', product_name: 'Shimla Apples', quantity: 2, price: 120, subtotal: 240, is_substituted: false },
-      { id: 'OI003', product_id: 'P007', product_name: 'Fresh Spinach', quantity: 3, price: 25, subtotal: 75, is_substituted: false },
-      { id: 'OI004', product_id: 'P006', product_name: 'Orange Carrots', quantity: 2, price: 40, subtotal: 80, is_substituted: false },
+      { id: 'OI001', product_id: 'P001', product_name: 'Organic Tomatoes', quantity: 2, unit: 'kg', price: 45, subtotal: 90, is_substituted: false },
+      { id: 'OI002', product_id: 'P004', product_name: 'Shimla Apples', quantity: 2, unit: 'kg', price: 120, subtotal: 240, is_substituted: false },
+      { id: 'OI003', product_id: 'P007', product_name: 'Fresh Spinach', quantity: 3, unit: 'bunch', price: 25, subtotal: 75, is_substituted: false },
+      { id: 'OI004', product_id: 'P006', product_name: 'Orange Carrots', quantity: 2, unit: 'kg', price: 40, subtotal: 80, is_substituted: false },
     ],
     created_at: '2025-01-10T08:30:00Z',
     updated_at: '2025-01-10T09:15:00Z',
@@ -106,14 +109,35 @@ export const orders: Order[] = [
     zone: 'Zone A',
     total_amount: 330,
     payment_mode: 'COD',
-    status: 'Dispatched',
+    status: 'Packed', // Packed by packer - ready for runsheet assignment
     items: [
-      { id: 'OI005', product_id: 'P002', product_name: 'Fresh Potatoes', quantity: 5, price: 30, subtotal: 150, is_substituted: false },
-      { id: 'OI006', product_id: 'P003', product_name: 'Red Onions', quantity: 3, price: 35, subtotal: 105, is_substituted: false },
-      { id: 'OI007', product_id: 'P005', product_name: 'Farm Bananas', quantity: 1, price: 50, subtotal: 50, is_substituted: false },
+      { id: 'OI005', product_id: 'P002', product_name: 'Fresh Potatoes', quantity: 5, unit: 'kg', price: 30, subtotal: 150, is_substituted: false },
+      { id: 'OI006', product_id: 'P003', product_name: 'Red Onions', quantity: 3, unit: 'kg', price: 35, subtotal: 105, is_substituted: false },
+      { id: 'OI007', product_id: 'P005', product_name: 'Farm Bananas', quantity: 1, unit: 'dozen', price: 50, subtotal: 50, is_substituted: false },
     ],
     created_at: '2025-01-10T08:45:00Z',
     updated_at: '2025-01-10T10:00:00Z',
+    delivery_slot: '11:00 AM - 1:00 PM',
+    notes: 'Handle with care - fragile items' // Delivery instructions for rider
+  },
+  {
+    id: 'ORD003',
+    order_number: 'ORD-1762092299272',
+    customer_id: 'C003',
+    customer_name: 'Mobile Customer',
+    customer_phone: '+91 98765 43299',
+    address: '123 Mobile Street, Test Area, Test City, 110001', // Fixed: Added complete address with pincode
+    lat: 28.4595,
+    lng: 77.0266,
+    zone: 'Zone A',
+    total_amount: 299, // Updated to match Orders dashboard (₹299)
+    payment_mode: 'Online', // Fixed: Customer paid online → Prepaid (was incorrectly 'COD')
+    status: 'Packed', // Packed by packer - ready for runsheet assignment
+    items: [
+      { id: 'OI008', product_id: 'P001', product_name: 'Product Name', quantity: 1, unit: '1000unit', price: 299, subtotal: 299, is_substituted: false },
+    ],
+    created_at: '2025-01-10T09:00:00Z',
+    updated_at: '2025-01-10T10:30:00Z',
     delivery_slot: '11:00 AM - 1:00 PM'
   },
 ];
@@ -151,11 +175,39 @@ export const runsheets: Runsheet[] = [
     rider_id: 'R001',
     rider_name: 'Suresh Kumar',
     run_date: '2025-01-10',
+    departure_time: '09:00',
+    created_at: '2025-01-10T09:00:00Z', // Fixed timestamp when runsheet was created
     orders_assigned: ['ORD002'],
     route_zone: 'Zone A',
     status: 'In Transit',
     total_stops: 1,
     estimated_time: '30 mins'
+  },
+  {
+    id: 'RS002',
+    rider_id: 'R001',
+    rider_name: 'Suresh Kumar',
+    run_date: '2025-01-09',
+    departure_time: '09:00',
+    created_at: '2025-01-09T09:00:00Z', // Fixed timestamp when runsheet was created
+    orders_assigned: ['ORD001', 'ORD002'],
+    route_zone: 'Zone A',
+    status: 'Completed',
+    total_stops: 2,
+    estimated_time: '45 mins'
+  },
+  {
+    id: 'RS003',
+    rider_id: 'R001',
+    rider_name: 'Suresh Kumar',
+    run_date: '2025-01-08',
+    departure_time: '09:00',
+    created_at: '2025-01-08T09:00:00Z', // Fixed timestamp when runsheet was created
+    orders_assigned: ['ORD001'],
+    route_zone: 'Zone A',
+    status: 'Completed',
+    total_stops: 1,
+    estimated_time: '25 mins'
   }
 ];
 

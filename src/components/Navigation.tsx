@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { 
   Package, 
@@ -66,12 +66,10 @@ const navigationItems = [
     title: 'Delivery',
     icon: Truck,
     items: [
-      { title: 'Rider Management', href: '/delivery/rider-management', icon: Users },
       { title: 'Rider Overview', href: '/delivery/rider-overview', icon: TrendingUp },
       { title: 'Runsheet Management', href: '/delivery/runsheets', icon: ClipboardList },
       { title: 'Create Runsheet', href: '/delivery/create-runsheet', icon: ClipboardList },
       { title: 'Rider Onboarding', href: '/delivery/rider-onboarding-queue', icon: Users },
-      { title: 'Cash Collection', href: '/delivery/cash-collection', icon: CreditCard },
       
     ]
   },
@@ -123,11 +121,98 @@ const navigationItems = [
   // }
 ];
 
+// Helper function to find which parent menu contains the active route
+const findActiveParentMenu = (pathname: string, searchParams: URLSearchParams) => {
+  for (const item of navigationItems) {
+    if (item.items) {
+      // Check if any child item matches current route
+      const hasActiveChild = item.items.some(subItem => {
+        // Exact match
+        if (pathname === subItem.href) return true;
+        
+        // Handle nested routes for order management
+        if (pathname.startsWith('/order-management/orders/')) {
+          const from = searchParams.get('from');
+          if (from === 'packer-overview' && subItem.href === '/order-management/packer-overview') return true;
+          if (subItem.href === '/order-management/orders') return true;
+        }
+        
+        // Handle packer-orders routes
+        if (pathname.startsWith('/order-management/packer-orders/')) {
+          if (subItem.href === '/order-management/packer-overview') return true;
+        }
+        
+        // Handle packer-details routes
+        if (pathname.startsWith('/order-management/packer-details/')) {
+          if (subItem.href === '/order-management/packer-overview') return true;
+        }
+        
+        // Handle delivery routes
+        if (pathname.startsWith('/delivery/')) {
+          if (subItem.href && pathname.startsWith(subItem.href)) return true;
+        }
+        
+        // Handle accounts routes
+        if (pathname.startsWith('/accounts/')) {
+          if (subItem.href && pathname.startsWith(subItem.href)) return true;
+        }
+        
+        // Handle inventory routes
+        if (pathname.startsWith('/inventory/')) {
+          if (subItem.href && pathname.startsWith(subItem.href)) return true;
+        }
+        
+        // Handle stock-adjustment
+        if (pathname.startsWith('/stock-adjustment')) {
+          if (subItem.href === '/stock-adjustment') return true;
+        }
+        
+        // Handle pincodes
+        if (pathname.startsWith('/pincodes')) {
+          if (subItem.href === '/pincodes') return true;
+        }
+        
+        return false;
+      });
+      
+      if (hasActiveChild) {
+        return item.title;
+      }
+    }
+  }
+  return null;
+};
+
 export function Navigation() {
   const [isOpen, setIsOpen] = useState(false);
-  const [openDropdowns, setOpenDropdowns] = useState<Set<string>>(new Set());
   const location = useLocation();
   const [searchParams] = useSearchParams();
+
+  // Find which parent menu should be open based on current route
+  const getActiveParentMenu = useMemo(() => {
+    return findActiveParentMenu(location.pathname, searchParams);
+  }, [location.pathname, searchParams]);
+
+  // Initialize openDropdowns with the active parent menu (for initial load/refresh)
+  const [openDropdowns, setOpenDropdowns] = useState<Set<string>>(() => {
+    const activeParent = findActiveParentMenu(location.pathname, searchParams);
+    const initialSet = new Set<string>();
+    if (activeParent) {
+      initialSet.add(activeParent);
+    }
+    return initialSet;
+  });
+
+  // Update openDropdowns when route changes (keeps dropdown open after refresh)
+  useEffect(() => {
+    if (getActiveParentMenu) {
+      setOpenDropdowns(prev => {
+        const newSet = new Set(prev);
+        newSet.add(getActiveParentMenu);
+        return newSet;
+      });
+    }
+  }, [getActiveParentMenu]);
 
   const isActive = (href: string) => {
     // Handle exact matches
@@ -173,6 +258,13 @@ export function Navigation() {
       return false;
     }
     
+    // Handle delivery routes - mark item active if current path starts with the item's href
+    if (href.startsWith('/delivery/') && location.pathname.startsWith('/delivery/')) {
+      if (location.pathname.startsWith(href)) {
+        return true;
+      }
+    }
+
     return false;
   };
 
@@ -205,6 +297,13 @@ export function Navigation() {
         }
       }
       
+      // Handle delivery routes - keep Delivery parent highlighted for all delivery subscreens
+      if (location.pathname.startsWith('/delivery/')) {
+        if (item.href && location.pathname.startsWith(item.href)) {
+          return true;
+        }
+      }
+
       // Handle packer-details routes - always show packer overview as active
       if (location.pathname.startsWith('/order-management/packer-details/')) {
         if (item.href === '/order-management/packer-overview') {

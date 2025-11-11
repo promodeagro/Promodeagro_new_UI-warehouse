@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { Order, OrderItem, OrderStatus, PaymentMode, orders as dummyOrders } from '@/data/orderData';
 import { packers } from '@/data/packerData';
 import { useNotifications } from './NotificationContext';
@@ -43,8 +43,8 @@ export const OrderProvider: React.FC<OrderProviderProps> = ({ children }) => {
     });
   };
 
-  // Load orders from localStorage on mount, merge with dummy data
-  useEffect(() => {
+  // Load orders from localStorage on mount and listen for updates
+  const loadOrders = useCallback(() => {
     const savedOrders = localStorage.getItem('warehouse-orders');
     if (savedOrders) {
       try {
@@ -76,6 +76,116 @@ export const OrderProvider: React.FC<OrderProviderProps> = ({ children }) => {
       setOrders(dummyOrders);
     }
   }, []);
+
+  useEffect(() => {
+    // Load orders on mount
+    loadOrders();
+
+    // Listen for localStorage changes (when CloseRunsheet or other components update orders)
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'warehouse-orders') {
+        loadOrders();
+      }
+    };
+
+    // Listen for custom events (when same-tab components update orders)
+    const handleOrderUpdate = () => {
+      loadOrders();
+    };
+
+    const handleCustomerCancellation = (event: Event) => {
+      if (!('detail' in event)) return;
+      const detail = (event as CustomEvent).detail || {};
+      const orderId: string | undefined = detail.orderId || detail.order_id || detail.id;
+      if (!orderId) return;
+
+      let notificationPayload: { orderNumber: string; reason?: string } | null = null;
+
+      setOrders(prev => {
+        let changed = false;
+        let orderNumber = '';
+
+        const updatedOrders = prev.map(order => {
+          if (order.id === orderId) {
+            changed = true;
+            orderNumber = order.order_number;
+            return {
+              ...order,
+              status: 'Returned',
+              cancellation_requested: true,
+              cancellation_reason: detail.reason || order.cancellation_reason,
+              cancellation_requested_at: detail.requestedAt || detail.requested_at || new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            };
+          }
+          return order;
+        });
+
+        if (changed) {
+          notificationPayload = {
+            orderNumber,
+            reason: detail.reason
+          };
+
+          const savedOrders = updatedOrders.filter(order => {
+            const isDummyOrder = dummyOrders.some(dummy => dummy.id === order.id);
+            if (isDummyOrder) {
+              return order.updated_at !== order.created_at;
+            }
+            return true;
+          });
+          localStorage.setItem('warehouse-orders', JSON.stringify(savedOrders));
+
+          window.dispatchEvent(new CustomEvent('orderStatusUpdated', {
+            detail: {
+              orderIds: [orderId],
+              orderId,
+              status: 'Returned',
+              reason: detail.reason
+            }
+          }));
+        }
+
+        return updatedOrders;
+      });
+
+      if (notificationPayload) {
+        const message = notificationPayload.reason
+          ? `Customer requested cancellation for order ${notificationPayload.orderNumber} - ${notificationPayload.reason}`
+          : `Customer requested cancellation for order ${notificationPayload.orderNumber}`;
+
+        addNotification({
+          type: 'order_update',
+          title: 'Cancellation Requested',
+          message,
+          priority: 'high',
+          orderId
+        });
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('orderStatusUpdated', handleOrderUpdate);
+    window.addEventListener('riderOrderCompleted', handleOrderUpdate);
+    window.addEventListener('orderCancellationRequested', handleCustomerCancellation);
+
+    // Poll for updates (fallback - will be replaced with real-time sync via API)
+    // TODO: Remove polling when API real-time sync is implemented
+    const pollInterval = setInterval(() => {
+      const storedOrders = localStorage.getItem('warehouse-orders');
+      if (storedOrders) {
+        loadOrders();
+      }
+    }, 3000); // Poll every 3 seconds
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('orderStatusUpdated', handleOrderUpdate);
+      window.removeEventListener('riderOrderCompleted', handleOrderUpdate);
+      window.removeEventListener('orderCancellationRequested', handleCustomerCancellation);
+      clearInterval(pollInterval);
+    };
+  }, [loadOrders, addNotification]);
 
   // Note: localStorage saving is handled manually in addOrder, updateOrder, and deleteOrder functions
 
@@ -190,9 +300,35 @@ export const OrderProvider: React.FC<OrderProviderProps> = ({ children }) => {
           ? { ...order, ...updates, updated_at: new Date().toISOString() }
           : order
       );
-      // Save only the new orders (excluding dummy data) to localStorage
-      const savedOrders = updatedOrders.filter(order => !dummyOrders.some(dummy => dummy.id === order.id));
+      
+      // Save ALL updated orders to localStorage (including dummy data that has been modified)
+      // This ensures that when we update a dummy order, it gets saved and persists
+      const savedOrders = updatedOrders.map(order => {
+        // If this order was originally from dummy data but has been modified, save it
+        const isDummyOrder = dummyOrders.some(dummy => dummy.id === order.id);
+        if (isDummyOrder) {
+          // Mark this as a modified dummy order so it gets saved
+          return order;
+        }
+        return order;
+      }).filter(order => {
+        // Only save orders that are either new or modified dummy orders
+        const isDummyOrder = dummyOrders.some(dummy => dummy.id === order.id);
+        // If it's a dummy order, check if it has been modified (has updated_at different from created_at)
+        if (isDummyOrder) {
+          return order.updated_at !== order.created_at;
+        }
+        // Save all non-dummy orders
+        return true;
+      });
+      
       localStorage.setItem('warehouse-orders', JSON.stringify(savedOrders));
+      
+      // Dispatch event to notify other components
+      window.dispatchEvent(new CustomEvent('orderStatusUpdated', {
+        detail: { orderId: id, updates }
+      }));
+      
       return updatedOrders;
     });
   };
@@ -214,10 +350,21 @@ export const OrderProvider: React.FC<OrderProviderProps> = ({ children }) => {
   };
 
   const updateOrderStatus = (id: string, status: Order['status'], packingStatus?: Order['packing_status']) => {
-    const updates: Partial<Order> = { status };
-    if (packingStatus) {
+    const updates: Partial<Order> = {
+      status,
+      updated_at: new Date().toISOString()
+    };
+
+    if (typeof packingStatus !== 'undefined') {
       updates.packing_status = packingStatus;
     }
+
+    if (status === 'Cancelled' || status === 'Returned' || status === 'Failed') {
+      updates.packing_status = 'cancelled';
+      updates.assigned_packer_id = undefined;
+      updates.assigned_packer_name = undefined;
+    }
+
     updateOrder(id, updates);
     
     // Show notification for out of stock

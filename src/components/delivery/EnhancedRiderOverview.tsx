@@ -18,79 +18,72 @@ import {
   UserCheck
 } from "lucide-react";
 import { Link } from "react-router-dom";
+import { riders, runsheets } from "@/data/dummyData";
 
 const EnhancedRiderOverview = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [zoneFilter, setZoneFilter] = useState("all");
 
-  // Dummy data for riders
-  const riders = [
-    {
-      id: "RD001",
-      name: "Rajesh Kumar",
-      status: "On Duty",
-      zone: "Sector 21, Gurgaon",
-      phone: "+91 9876543210",
-      runsheet: "RS-2025-001",
-      ordersAssigned: 24,
-      ordersDelivered: 18,
-      ordersPending: 6,
-      codAmount: 15600,
-      prepaidAmount: 32400,
-      kmCovered: 45,
-      lastUpdate: "2 mins ago",
-      avgDeliveryTime: 28,
-      deliveryRate: 85
-    },
-    {
-      id: "RD002",
-      name: "Amit Singh",
-      status: "Available",
-      zone: "DLF Phase 3",
-      phone: "+91 9123456789",
-      runsheet: null,
-      ordersAssigned: 0,
-      ordersDelivered: 0,
-      ordersPending: 0,
-      codAmount: 0,
-      prepaidAmount: 0,
-      kmCovered: 0,
-      lastUpdate: "5 mins ago",
-      avgDeliveryTime: 25,
-      deliveryRate: 92
-    },
-  ];
-
+  // Calculate stats from actual data - ready for API integration
+  // TODO: Replace with real API data when backend is ready
   const stats = {
-    totalRiders: 45,
-    activeRiders: 12,
-    availableRiders: 18,
-    ordersOut: 156,
-    codOutstanding: 245680,
-    openRunsheets: 8
+    totalRiders: riders.length,
+    activeRiders: riders.filter(r => r.current_status === 'On Trip').length,
+    availableRiders: riders.filter(r => r.current_status === 'Available').length,
+    ordersOut: riders.reduce((sum, r) => sum + (r.orders_out_for_delivery || 0), 0),
+    codOutstanding: riders.reduce((sum, r) => sum + (r.cod_outstanding || 0), 0),
+    openRunsheets: runsheets.filter(r => r.status === 'In Transit' || r.status === 'Created').length
   };
+
+  // Filter riders based on search and status
+  const filteredRiders = riders.filter(rider => {
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      if (
+        !rider.name.toLowerCase().includes(query) &&
+        !rider.id.toLowerCase().includes(query) &&
+        !rider.phone.includes(query)
+      ) {
+        return false;
+      }
+    }
+
+    if (statusFilter === "on-duty" && rider.current_status !== "On Trip") return false;
+    if (statusFilter === "available" && rider.current_status !== "Available") return false;
+    if (statusFilter === "offline" && rider.current_status !== "Offline") return false;
+
+    if (zoneFilter !== "all") {
+      const zoneLower = zoneFilter.toLowerCase();
+      if (!rider.zone.toLowerCase().includes(zoneLower)) return false;
+    }
+
+    return true;
+  });
 
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
-      "On Duty": "bg-success text-success-foreground",
+      "On Trip": "bg-success text-success-foreground",
       "Available": "bg-info text-info-foreground",
-      "Out for Delivery": "bg-warning text-warning-foreground",
+      "Busy": "bg-warning text-warning-foreground",
       "Offline": "bg-muted text-muted-foreground"
     };
     return colors[status] || "bg-muted";
   };
 
   return (
-    <div className="min-h-screen bg-muted/30 p-6">
-      {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-foreground mb-2">Rider Overview</h1>
-        <p className="text-muted-foreground">Monitor and manage delivery riders in real-time</p>
-      </div>
+    <div className="min-h-screen bg-muted/30">
+      <main>
+        {/* Page header - matches Rider Management screen style */}
+        <div className="flex items-center justify-between mb-4 sm:mb-5 md:mb-6">
+          <div>
+            <h1 className="text-2xl font-semibold text-foreground">Rider Overview</h1>
+            <p className="text-sm text-muted-foreground">Monitor and manage delivery riders in real-time</p>
+          </div>
+        </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 mb-6">
+        {/* Stats Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 mb-6">
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
@@ -218,8 +211,25 @@ const EnhancedRiderOverview = () => {
       <Card>
         <CardContent className="pt-6">
           <div className="space-y-4">
-            <h2 className="text-xl font-semibold mb-4">Active Riders ({riders.length})</h2>
-            {riders.map((rider) => (
+            <h2 className="text-xl font-semibold mb-4">Active Riders ({filteredRiders.length})</h2>
+            {filteredRiders.length === 0 ? (
+              <div className="text-center py-12">
+                <p className="text-muted-foreground">No riders found matching your filters</p>
+              </div>
+            ) : (
+              filteredRiders.map((rider) => {
+                // Find runsheet for this rider
+                const riderRunsheet = runsheets.find(r => r.rider_id === rider.id && (r.status === 'In Transit' || r.status === 'Created'));
+                const ordersAssigned = rider.orders_out_for_delivery || 0;
+                const ordersDelivered = rider.orders_delivered_today || 0;
+                const ordersPending = Math.max(0, ordersAssigned - ordersDelivered);
+                
+                // Calculate COD and Prepaid from orders in runsheet
+                // TODO: When API is ready, fetch actual order details
+                const codAmount = rider.cod_outstanding || 0;
+                const prepaidAmount = (rider.orders_out_for_delivery || 0) * 500; // Placeholder calculation
+                
+                return (
               <div key={rider.id} className="p-6 rounded-lg border bg-card hover:shadow-md transition-shadow">
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                   {/* Rider Info */}
@@ -231,7 +241,7 @@ const EnhancedRiderOverview = () => {
                       <div>
                         <h3 className="font-semibold text-foreground">{rider.name}</h3>
                         <p className="text-sm text-muted-foreground">{rider.id}</p>
-                        <Badge className={`mt-2 ${getStatusColor(rider.status)}`}>{rider.status}</Badge>
+                        <Badge className={`mt-2 ${getStatusColor(rider.current_status)}`}>{rider.current_status}</Badge>
                       </div>
                     </div>
                   </div>
@@ -239,12 +249,12 @@ const EnhancedRiderOverview = () => {
                   {/* Current Runsheet */}
                   <div className="lg:col-span-2">
                     <p className="text-xs text-muted-foreground mb-1">Current Runsheet</p>
-                    {rider.runsheet ? (
+                    {riderRunsheet ? (
                       <>
-                        <p className="font-semibold text-foreground">{rider.runsheet}</p>
-                        <p className="text-sm text-muted-foreground">Assigned: {rider.ordersAssigned}</p>
-                        <p className="text-sm text-success">Delivered: {rider.ordersDelivered}</p>
-                        <p className="text-sm text-warning">Pending: {rider.ordersPending}</p>
+                        <p className="font-semibold text-foreground">{riderRunsheet.id}</p>
+                        <p className="text-sm text-muted-foreground">Assigned: {ordersAssigned}</p>
+                        <p className="text-sm text-success">Delivered: {ordersDelivered}</p>
+                        <p className="text-sm text-warning">Pending: {ordersPending}</p>
                       </>
                     ) : (
                       <p className="text-sm text-muted-foreground italic">No active runsheet</p>
@@ -264,7 +274,9 @@ const EnhancedRiderOverview = () => {
                       <Phone className="h-4 w-4 text-muted-foreground" />
                       <p className="text-sm">{rider.phone}</p>
                     </div>
-                    <p className="text-xs text-muted-foreground mt-1">Updated: {rider.lastUpdate}</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Last seen: {rider.last_seen ? new Date(rider.last_seen).toLocaleTimeString() : 'Never'}
+                    </p>
                   </div>
 
                   {/* Performance */}
@@ -273,15 +285,15 @@ const EnhancedRiderOverview = () => {
                     <div className="space-y-1">
                       <div className="flex justify-between text-sm">
                         <span className="text-muted-foreground">Delivery Rate:</span>
-                        <span className="font-semibold text-success">{rider.deliveryRate}%</span>
+                        <span className="font-semibold text-success">{rider.delivery_success_rate?.toFixed(0) || 0}%</span>
                       </div>
                       <div className="flex justify-between text-sm">
                         <span className="text-muted-foreground">Avg Time:</span>
-                        <span className="font-semibold">{rider.avgDeliveryTime} mins</span>
+                        <span className="font-semibold">{rider.avg_delivery_time_minutes || 0} mins</span>
                       </div>
                       <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">KM Covered:</span>
-                        <span className="font-semibold">{rider.kmCovered} km</span>
+                        <span className="text-muted-foreground">Total Deliveries:</span>
+                        <span className="font-semibold">{rider.total_deliveries || 0}</span>
                       </div>
                     </div>
                   </div>
@@ -292,11 +304,11 @@ const EnhancedRiderOverview = () => {
                     <div className="space-y-1">
                       <div>
                         <p className="text-xs text-muted-foreground">COD Pending:</p>
-                        <p className="text-lg font-bold text-warning">₹{rider.codAmount.toLocaleString()}</p>
+                        <p className="text-lg font-bold text-warning">₹{codAmount.toLocaleString()}</p>
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground">Prepaid:</p>
-                        <p className="text-base font-semibold text-success">₹{rider.prepaidAmount.toLocaleString()}</p>
+                        <p className="text-base font-semibold text-success">₹{prepaidAmount.toLocaleString()}</p>
                       </div>
                     </div>
                   </div>
@@ -311,8 +323,8 @@ const EnhancedRiderOverview = () => {
                       <MapPin className="h-3 w-3" />
                       Track
                     </Button>
-                    {rider.runsheet && (
-                      <Link to={`/delivery/runsheets/${rider.runsheet}`}>
+                    {riderRunsheet && (
+                      <Link to={`/delivery/runsheets/${riderRunsheet.id}`}>
                         <Button size="sm" variant="default" className="w-full gap-2 justify-start">
                           <FileText className="h-3 w-3" />
                           Runsheet
@@ -330,10 +342,13 @@ const EnhancedRiderOverview = () => {
                   </div>
                 </div>
               </div>
-            ))}
+                );
+              })
+            )}
           </div>
         </CardContent>
       </Card>
+      </main>
     </div>
   );
 };
