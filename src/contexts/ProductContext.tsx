@@ -28,22 +28,83 @@ interface ProductProviderProps {
 export const ProductProvider: React.FC<ProductProviderProps> = ({ children }) => {
   const [products, setProducts] = useState<Product[]>(initialProducts);
 
+  // Adapter types for single-row parent with embedded variants array (Dynamo-style)
+  type RawVariant = Omit<Product,
+    'isVariant' | 'parentProductId' | 'lastUpdated' | 'status' | 'quality' | 'supplier' | 'image'> & {
+      id: string;
+    };
+  type RawParent = Omit<Product,
+    'isVariant' | 'parentProductId'> & {
+      variants?: RawVariant[];
+    };
+
+  const RAW_STORAGE_KEY = 'warehouse-products-raw';
+
+  // Convert raw single-row parents -> flat UI items (parent + variants as separate items)
+  const expandFromRaw = (rawParents: RawParent[]): Product[] => {
+    const flat: Product[] = [];
+    rawParents.forEach((parent) => {
+      const { variants = [], ...parentData } = parent;
+      flat.push({ ...parentData });
+      variants.forEach((v) => {
+        flat.push({
+          ...v,
+          isVariant: true,
+          parentProductId: parent.id,
+        } as Product);
+      });
+    });
+    return flat;
+  };
+
+  // Convert flat UI items -> raw parents with variants array
+  const collapseToRaw = (all: Product[]): RawParent[] => {
+    const parents = all.filter((p) => !p.isVariant && !p.parentProductId);
+    return parents.map((parent) => {
+      const variants = all.filter((p) => p.isVariant && p.parentProductId === parent.id)
+        .map((v) => {
+          const { parentProductId, isVariant, lastUpdated, status, quality, supplier, image, ...rest } = v as any;
+          return rest as RawVariant;
+        });
+      return { ...(parent as any), variants } as RawParent;
+    });
+  };
+
   // Load products from localStorage on mount
   useEffect(() => {
-    const savedProducts = localStorage.getItem('warehouse-products');
-    if (savedProducts) {
-      try {
-        const parsedProducts = JSON.parse(savedProducts);
-        setProducts(parsedProducts);
-      } catch (error) {
-        console.error('Error loading products from localStorage:', error);
+    try {
+      // Prefer raw (single-row with variants) if available
+      const savedRaw = localStorage.getItem(RAW_STORAGE_KEY);
+      if (savedRaw) {
+        const parsedRaw: RawParent[] = JSON.parse(savedRaw);
+        const expanded = expandFromRaw(parsedRaw);
+        setProducts(expanded);
+        return;
       }
+      // Fallback to legacy flat storage
+      const savedProducts = localStorage.getItem('warehouse-products');
+      if (savedProducts) {
+        const parsedProducts: Product[] = JSON.parse(savedProducts);
+        setProducts(parsedProducts);
+        // Also persist a raw snapshot for forward compatibility
+        const rawSnapshot = collapseToRaw(parsedProducts);
+        localStorage.setItem(RAW_STORAGE_KEY, JSON.stringify(rawSnapshot));
+      }
+    } catch (error) {
+      console.error('Error loading products from localStorage:', error);
     }
   }, []);
 
   // Save products to localStorage whenever products change
   useEffect(() => {
     localStorage.setItem('warehouse-products', JSON.stringify(products));
+    // Persist raw (single-row with variants) alongside for Dynamo-style storage
+    try {
+      const raw = collapseToRaw(products);
+      localStorage.setItem(RAW_STORAGE_KEY, JSON.stringify(raw));
+    } catch (e) {
+      console.error('Error saving raw products snapshot:', e);
+    }
   }, [products]);
 
   const addProduct = (productData: Omit<Product, 'id' | 'lastUpdated'>) => {
@@ -75,7 +136,14 @@ export const ProductProvider: React.FC<ProductProviderProps> = ({ children }) =>
   };
 
   const deleteProduct = (id: string) => {
-    setProducts(prev => prev.filter(product => product.id !== id));
+    setProducts(prev => {
+      // If deleting a parent, also remove its variants
+      const toDelete = prev.find(p => p.id === id);
+      if (toDelete && !toDelete.isVariant) {
+        return prev.filter(p => p.id !== id && p.parentProductId !== id);
+      }
+      return prev.filter(product => product.id !== id);
+    });
   };
 
   const getProductById = (id: string) => {
