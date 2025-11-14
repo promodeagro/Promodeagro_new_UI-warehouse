@@ -196,20 +196,57 @@ const CloseRunsheet = () => {
   const expectedCODRaw = codOrders.reduce((sum, o) => sum + (o.total_amount || 0), 0);
   const totalPrepaidRaw = prepaidOrders.reduce((sum, o) => sum + (o.total_amount || 0), 0);
 
-  // Auto undelivered totals
+  // Auto undelivered totals (split by payment mode)
   const undeliveredOrders = runsheetOrders.filter(o => (o.status || '').toLowerCase() === 'undelivered');
-  const autoUndeliveredTotal = undeliveredOrders.reduce((sum, o) => sum + (o.total_amount || 0), 0);
-  const autoUndeliveredCOD = undeliveredOrders.filter(o => o.payment_mode === 'COD').reduce((s, o) => s + (o.total_amount || 0), 0);
-  const autoUndeliveredPrepaid = undeliveredOrders.filter(o => o.payment_mode === 'Online').reduce((s, o) => s + (o.total_amount || 0), 0);
+  const undeliveredCOD = undeliveredOrders
+    .filter(o => o.payment_mode === 'COD')
+    .reduce((sum, o) => sum + (o.total_amount || 0), 0);
+  const undeliveredPrepaid = undeliveredOrders
+    .filter(o => o.payment_mode === 'Online')
+    .reduce((sum, o) => sum + (o.total_amount || 0), 0);
+  const autoUndeliveredAmount = undeliveredCOD + undeliveredPrepaid;
 
-  // Initialize input with auto-undelivered whenever recalculated (unless user is editing)
-  const effectiveUndelivered = autoUndeliveredTotal;
+  // Calculate split ratio based on actual undelivered orders
+  // If no undelivered orders, use ratio from all orders in runsheet
+  const getUndeliveredSplitRatio = () => {
+    if (autoUndeliveredAmount > 0) {
+      return {
+        codRatio: undeliveredCOD / autoUndeliveredAmount,
+        prepaidRatio: undeliveredPrepaid / autoUndeliveredAmount
+      };
+    }
+    // Fallback: use ratio from all orders if no undelivered yet
+    const totalAmount = expectedCODRaw + totalPrepaidRaw;
+    if (totalAmount > 0) {
+      return {
+        codRatio: expectedCODRaw / totalAmount,
+        prepaidRatio: totalPrepaidRaw / totalAmount
+      };
+    }
+    return { codRatio: 0.5, prepaidRatio: 0.5 }; // Default 50/50 if no data
+  };
 
-  // Adjusted totals (subtract undelivered from components; manual override reduces grand total further if needed)
-  const expectedCOD = Math.max(0, expectedCODRaw - autoUndeliveredCOD);
-  const totalPrepaid = Math.max(0, totalPrepaidRaw - autoUndeliveredPrepaid);
-  const grandTotal = Math.max(0, expectedCOD + totalPrepaid - Math.max(0, effectiveUndelivered - (autoUndeliveredCOD + autoUndeliveredPrepaid)));
+  const splitRatio = getUndeliveredSplitRatio();
+  const [undeliveredAmountInput, setUndeliveredAmountInput] = useState(() => autoUndeliveredAmount.toFixed(2));
 
+  useEffect(() => {
+    setUndeliveredAmountInput(autoUndeliveredAmount.toFixed(2));
+  }, [autoUndeliveredAmount]);
+
+  // Calculate split amounts based on user input and ratio
+  const parsedUndeliveredAmount = Math.max(0, parseFloat(undeliveredAmountInput || "0"));
+  const parsedUndeliveredCOD = parsedUndeliveredAmount * splitRatio.codRatio;
+  const parsedUndeliveredPrepaid = parsedUndeliveredAmount * splitRatio.prepaidRatio;
+  const undeliveredAmount = parsedUndeliveredAmount;
+
+  // Clamp values to original ranges so edits can't exceed totals
+  const expectedCOD = Math.max(0, expectedCODRaw - Math.min(parsedUndeliveredCOD, expectedCODRaw));
+  const totalPrepaid = Math.max(0, totalPrepaidRaw - Math.min(parsedUndeliveredPrepaid, totalPrepaidRaw));
+
+  // Original grand total (remains constant), also equals sum of adjusted components + undelivered
+  const grandTotal = expectedCODRaw + totalPrepaidRaw;
+  const reconciledGrandTotal = expectedCOD + totalPrepaid + undeliveredAmount;
+ 
   // Editable collection inputs (prefilled from auto totals)
   const [codCollectedInput, setCodCollectedInput] = useState<string>("");
   const [onlineCollectedInput, setOnlineCollectedInput] = useState<string>("");
@@ -235,8 +272,11 @@ const CloseRunsheet = () => {
 
   // Grand Total should not change with allocation; it equals Prepaid + COD Expected
   const adjustedGrandTotal = useMemo(() => {
-    return totalPrepaid + expectedCOD;
-  }, [totalPrepaid, expectedCOD]);
+    // Keep grand total stable but prefer reconciled sum to avoid rounding gaps
+    const viaComponents = parseFloat((reconciledGrandTotal).toFixed(2));
+    const viaRaw = parseFloat((grandTotal).toFixed(2));
+    return Math.abs(viaComponents - viaRaw) < 0.01 ? viaRaw : viaComponents;
+  }, [grandTotal, reconciledGrandTotal]);
 
   // Initialize pending fields from runsheet if present
   useEffect(() => {
@@ -252,25 +292,33 @@ const CloseRunsheet = () => {
   }, [runsheet, refreshKey]);
 
   const handleVerifyCollection = () => {
-    const collected = parseFloat(collectedAmount);
-    const pending = parseFloat(pendingAmount);
+    const codCollected = parseFloat(codCollectedInput || "0");
+    const onlineCollected = parseFloat(onlineCollectedInput || "0");
+    const pending = parseFloat(pendingAmount || "0");
     
-    if (isNaN(collected)) {
-      toast({
-        title: "Invalid Amount",
-        description: "Please enter a valid amount",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // shortage is what rider still owes vs COD expected
-    const shortage = expectedCOD - collected;
-
-    if (Math.abs(collected - expectedCOD) < 0.01) {
+    // Calculate what should be collected
+    // COD Collected + Online (UPI) should equal COD Expected (after undelivered adjustment)
+    const totalCODReceived = codCollected + onlineCollected;
+    const codDifference = Math.abs(totalCODReceived - expectedCOD);
+    
+    // Check if all amounts tally correctly
+    // Grand Total = (COD Expected - Undelivered COD) + (Prepaid Total - Undelivered Prepaid) + Undelivered Total
+    // OR: Grand Total = COD Collected + Online UPI + Prepaid Total + Undelivered Total
+    const calculatedGrandTotal = codCollected + onlineCollected + totalPrepaid + undeliveredAmount;
+    const grandTotalDifference = Math.abs(calculatedGrandTotal - grandTotal);
+    
+    // Verification passes if:
+    // 1. COD Collected + Online UPI matches COD Expected (within 0.01 rounding tolerance)
+    // 2. Grand total calculation matches (within 0.01 rounding tolerance)
+    // 3. If there's a pending amount, it should be documented with reason
+    const isCODMatch = codDifference < 0.01;
+    const isGrandTotalMatch = grandTotalDifference < 0.01;
+    
+    if (isCODMatch && isGrandTotalMatch) {
       setVerificationStatus('verified');
-      // Clear pending amount if rider paid back the full amount
-      if (!isNaN(pending) && pending > 0) {
+      
+      // Clear pending amount if everything matches
+      if (pending > 0) {
         setPendingAmount("");
         setPendingReason("");
         try {
@@ -282,35 +330,161 @@ const CloseRunsheet = () => {
           }
         } catch {}
       }
+      
       toast({
         title: "✓ Collection Verified",
-        description: `Amount matches expected COD: ₹${expectedCOD}${!isNaN(pending) && pending > 0 ? '. Pending amount cleared.' : ''}`,
+        description: `All amounts match! Closing runsheet...`,
       });
+      
+      // Automatically close runsheet after successful verification
+      // Use setTimeout to ensure state is updated and then close
+      setTimeout(() => {
+        // Directly call closing logic since verification just passed
+        if (verificationStatus === 'verified' || true) { // Bypass check since we just verified
+          // Call the close function directly
+          const closeRunsheet = () => {
+            // Mark any remaining "On the way" orders as "Undelivered"
+            try {
+              const storedOrders = localStorage.getItem('warehouse-orders');
+              let allOrders = [...dummyOrders];
+              
+              if (storedOrders) {
+                const parsed = JSON.parse(storedOrders);
+                const map = new Map(allOrders.map(o => [o.id, o]));
+                parsed.forEach((o: Order) => map.set(o.id, o));
+                allOrders = Array.from(map.values());
+              }
+
+              const runsheetOrderIds = runsheet.orders_assigned || [];
+              const undeliveredOrders = allOrders.filter(o => 
+                runsheetOrderIds.includes(o.id) && o.status === 'On the way'
+              );
+
+              if (undeliveredOrders.length > 0) {
+                const updatedOrders = allOrders.map(o => {
+                  if (runsheetOrderIds.includes(o.id) && o.status === 'On the way') {
+                    return {
+                      ...o,
+                      status: 'Undelivered' as OrderStatus,
+                      updated_at: new Date().toISOString()
+                    };
+                  }
+                  return o;
+                });
+
+                localStorage.setItem('warehouse-orders', JSON.stringify(updatedOrders));
+                
+                window.dispatchEvent(new CustomEvent('orderStatusUpdated', {
+                  detail: { 
+                    orderIds: undeliveredOrders.map(o => o.id), 
+                    status: 'Undelivered'
+                  }
+                }));
+              }
+            } catch (error) {
+              console.error('Error marking undelivered orders:', error);
+            }
+
+            // Update runsheet status to Completed and save all collection data
+            try {
+              const storedRunsheets = localStorage.getItem('warehouse-runsheets');
+              if (storedRunsheets) {
+                const parsed = JSON.parse(storedRunsheets);
+                const codCollectedNumeric = parseFloat(codCollectedInput || "0");
+                const onlineCollectedNumeric = parseFloat(onlineCollectedInput || "0");
+                const undeliveredCODNumeric = parseFloat(parsedUndeliveredCOD.toFixed(2));
+                const undeliveredPrepaidNumeric = parseFloat(parsedUndeliveredPrepaid.toFixed(2));
+                const undeliveredTotalNumeric = parseFloat(undeliveredAmount.toFixed(2));
+                const expectedCODNumeric = parseFloat(expectedCOD.toFixed(2));
+                const totalPrepaidNumeric = parseFloat(totalPrepaid.toFixed(2));
+                const pendingAmountNumeric = pendingAmount ? parseFloat(pendingAmount) : 0;
+
+                const updated = parsed.map((r: Runsheet) =>
+                  r.id === runsheet.id
+                    ? {
+                        ...r,
+                        status: 'Completed',
+                        cod_expected: expectedCODNumeric,
+                        prepaid_total_final: totalPrepaidNumeric,
+                        cod_collected: codCollectedNumeric,
+                        online_collected: onlineCollectedNumeric,
+                        undelivered_cod: undeliveredCODNumeric,
+                        undelivered_prepaid: undeliveredPrepaidNumeric,
+                        undelivered_total: undeliveredTotalNumeric,
+                        pending_amount: pendingAmountNumeric,
+                        pending_reason: pendingReason,
+                        collection_payment_mode: paymentMode,
+                        collection_verified_at: new Date().toISOString(),
+                      }
+                    : r
+                );
+
+                localStorage.setItem('warehouse-runsheets', JSON.stringify(updated));
+                
+                window.dispatchEvent(new CustomEvent('runsheetUpdated', {
+                  detail: { runsheetId: runsheet.id, status: 'Completed' }
+                }));
+              }
+            } catch (error) {
+              console.error('Error updating runsheet status:', error);
+            }
+
+            // Update rider status
+            try {
+              const storedRiders = localStorage.getItem('warehouse-riders');
+              if (storedRiders && runsheet.rider_id) {
+                const riders = JSON.parse(storedRiders);
+                const updated = riders.map((r: any) => 
+                  r.id === runsheet.rider_id 
+                    ? { ...r, current_status: 'Available', current_runsheet_id: undefined }
+                    : r
+                );
+                localStorage.setItem('warehouse-riders', JSON.stringify(updated));
+                
+                window.dispatchEvent(new CustomEvent('runsheetClosed', {
+                  detail: { 
+                    riderId: runsheet.rider_id,
+                    runsheetId: runsheet.id
+                  }
+                }));
+              }
+            } catch (error) {
+              console.error('Error updating rider status:', error);
+            }
+
+            setIsClosed(true);
+            toast({
+              title: "✓ Runsheet Closed",
+              description: `${runsheet.id} has been closed successfully`,
+            });
+
+            // Navigate to closed runsheet summary screen
+            setTimeout(() => {
+              navigate(`/delivery/runsheets/${runsheet.id}/closed`, {
+                state: { from: backPath, activeTab: 'closed' }
+              });
+            }, 1000);
+          };
+          
+          closeRunsheet();
+        }
+      }, 1000);
     } else {
-      // If pending is recorded and equals the shortage (within rounding), accept with warning
-      if (!isNaN(pending) && pending > 0 && Math.abs(shortage - pending) < 0.01) {
-        setVerificationStatus('verified');
-        // Persist pending to runsheet for future reconciliation
-        try {
-          const storedRunsheets = localStorage.getItem('warehouse-runsheets');
-          if (storedRunsheets) {
-            const parsed = JSON.parse(storedRunsheets);
-            const updated = parsed.map((r: any) => r.id === runsheet.id ? { ...r, pending_amount: pending, pending_reason: pendingReason } : r);
-            localStorage.setItem('warehouse-runsheets', JSON.stringify(updated));
-          }
-        } catch {}
-        toast({
-          title: "⚠ Verified with Pending",
-          description: `Pending from rider: ₹${pending.toFixed(2)}`,
-        });
-      } else {
-        setVerificationStatus('mismatch');
-        toast({
-          title: "⚠ Amount Mismatch",
-          description: `Expected: ₹${expectedCOD}, Collected: ₹${collected}${!isNaN(pending) && pending > 0 ? `, Pending noted: ₹${pending.toFixed(2)}` : ''}`,
-          variant: "destructive",
-        });
+      setVerificationStatus('mismatch');
+      
+      let mismatchDetails = [];
+      if (!isCODMatch) {
+        mismatchDetails.push(`COD: Expected ₹${expectedCOD.toFixed(2)}, Received ₹${totalCODReceived.toFixed(2)} (Difference: ₹${codDifference.toFixed(2)})`);
       }
+      if (!isGrandTotalMatch) {
+        mismatchDetails.push(`Grand Total: Expected ₹${grandTotal.toFixed(2)}, Calculated ₹${calculatedGrandTotal.toFixed(2)} (Difference: ₹${grandTotalDifference.toFixed(2)})`);
+      }
+      
+      toast({
+        title: "⚠ Amount Mismatch",
+        description: mismatchDetails.join(". ") + ". Please check all amounts.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -375,18 +549,74 @@ const CloseRunsheet = () => {
       console.error('Error marking undelivered orders:', error);
     }
 
-    // TODO: When API is ready, call API to close runsheet
-    // Update runsheet status in localStorage (for now)
+    // Update runsheet status to Completed and save all collection data
     try {
       const storedRunsheets = localStorage.getItem('warehouse-runsheets');
       if (storedRunsheets) {
         const parsed = JSON.parse(storedRunsheets);
-        const updated = parsed.map((r: Runsheet) => 
-          r.id === runsheet.id ? { ...r, status: 'Completed' } : r
+        const codCollectedNumeric = parseFloat(codCollectedInput || "0");
+        const onlineCollectedNumeric = parseFloat(onlineCollectedInput || "0");
+        const undeliveredCODNumeric = parseFloat(parsedUndeliveredCOD.toFixed(2));
+        const undeliveredPrepaidNumeric = parseFloat(parsedUndeliveredPrepaid.toFixed(2));
+        const undeliveredTotalNumeric = parseFloat(undeliveredAmount.toFixed(2));
+        const expectedCODNumeric = parseFloat(expectedCOD.toFixed(2));
+        const totalPrepaidNumeric = parseFloat(totalPrepaid.toFixed(2));
+        const pendingAmountNumeric = pendingAmount ? parseFloat(pendingAmount) : 0;
+
+        const updated = parsed.map((r: Runsheet) =>
+          r.id === runsheet.id
+            ? {
+                ...r,
+                status: 'Completed',
+                cod_expected: expectedCODNumeric,
+                prepaid_total_final: totalPrepaidNumeric,
+                cod_collected: codCollectedNumeric,
+                online_collected: onlineCollectedNumeric,
+                undelivered_cod: undeliveredCODNumeric,
+                undelivered_prepaid: undeliveredPrepaidNumeric,
+                undelivered_total: undeliveredTotalNumeric,
+                pending_amount: pendingAmountNumeric,
+                pending_reason: pendingReason,
+                collection_payment_mode: paymentMode,
+                collection_verified_at: new Date().toISOString(),
+              }
+            : r
         );
+
         localStorage.setItem('warehouse-runsheets', JSON.stringify(updated));
+        
+        // Dispatch event to notify RunsheetManagement to refresh
+        window.dispatchEvent(new CustomEvent('runsheetUpdated', {
+          detail: { runsheetId: runsheet.id, status: 'Completed' }
+        }));
       }
-    } catch {}
+    } catch (error) {
+      console.error('Error updating runsheet status:', error);
+    }
+
+    // Update rider status to "Available" and clear runsheet assignment
+    try {
+      const storedRiders = localStorage.getItem('warehouse-riders');
+      if (storedRiders && runsheet.rider_id) {
+        const riders = JSON.parse(storedRiders);
+        const updated = riders.map((r: any) => 
+          r.id === runsheet.rider_id 
+            ? { ...r, current_status: 'Available', current_runsheet_id: undefined }
+            : r
+        );
+        localStorage.setItem('warehouse-riders', JSON.stringify(updated));
+        
+        // Dispatch event to notify RiderOverview to refresh
+        window.dispatchEvent(new CustomEvent('runsheetClosed', {
+          detail: { 
+            riderId: runsheet.rider_id,
+            runsheetId: runsheet.id
+          }
+        }));
+      }
+    } catch (error) {
+      console.error('Error updating rider status:', error);
+    }
 
     setIsClosed(true);
     toast({
@@ -395,16 +625,10 @@ const CloseRunsheet = () => {
     });
 
     setTimeout(() => {
-      // Navigate back to runsheet history if rider_id exists, otherwise to runsheets management
-      const redirectPath = runsheet.rider_id 
-        ? `/delivery/rider-overview/runsheets-history/${runsheet.rider_id}`
-        : '/delivery/runsheets';
-      // When returning to rider history, open Closed tab by default
-      if (runsheet.rider_id) {
-        navigate(redirectPath, { state: { defaultTab: 'closed' } });
-      } else {
-        navigate(redirectPath);
-      }
+      // Navigate to closed runsheet summary screen
+      navigate(`/delivery/runsheets/${runsheet.id}/closed`, {
+        state: { from: backPath, activeTab: 'closed' }
+      });
     }, 2000);
   };
 
@@ -466,9 +690,13 @@ const CloseRunsheet = () => {
             assigned_rider_id: runsheet.rider_id,
             assigned_rider_name: rider.name
           } : {};
+          const clearedUndelivered = newStatus === 'Undelivered'
+            ? {}
+            : { undelivered_reason: undefined, undelivered_notes: undefined };
           return { 
             ...o, 
             status: newStatus,
+            ...clearedUndelivered,
             ...riderInfo,
             updated_at: new Date().toISOString()
           };
@@ -594,6 +822,15 @@ const CloseRunsheet = () => {
                   Edit
                 </Button>
               </Link>
+              {verificationStatus === 'verified' && !isClosed && (
+                <Button 
+                  onClick={handleCloseRunsheet}
+                  size="sm"
+                  className="h-8 bg-primary hover:bg-primary/90"
+                >
+                  Close Runsheet
+                </Button>
+              )}
             </div>
           </div>
         </div>
@@ -677,6 +914,36 @@ const CloseRunsheet = () => {
                   <span className="text-sm text-muted-foreground">Prepaid Total:</span>
                   <span className="font-bold text-success">₹{totalPrepaid.toFixed(2)}</span>
                 </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-sm text-muted-foreground">Undelivered Amount:</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground">₹</span>
+                      <Input
+                        value={undeliveredAmountInput}
+                        onChange={(e) => setUndeliveredAmountInput(e.target.value.replace(/[^0-9.]/g, ''))}
+                        className="h-8 w-28 text-right"
+                      />
+                    </div>
+                  </div>
+                  {undeliveredAmount > 0 && (
+                    <div className="pl-2 border-l-2 border-muted">
+                      <div className="flex items-center justify-between gap-4 text-xs">
+                        <span className="text-muted-foreground">Split - COD:</span>
+                        <span className="font-medium text-warning">₹{parsedUndeliveredCOD.toFixed(2)}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-4 text-xs mt-1">
+                        <span className="text-muted-foreground">Split - Prepaid:</span>
+                        <span className="font-medium text-success">₹{parsedUndeliveredPrepaid.toFixed(2)}</span>
+                      </div>
+                      {autoUndeliveredAmount > 0 && Math.abs(undeliveredAmount - autoUndeliveredAmount) > 0.01 && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Auto: ₹{autoUndeliveredAmount.toFixed(2)} (COD: ₹{undeliveredCOD.toFixed(2)}, Prepaid: ₹{undeliveredPrepaid.toFixed(2)})
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
                 <div className="flex items-center justify-between gap-4">
                   <span className="text-sm text-muted-foreground">COD Collected:</span>
                   <div className="flex items-center gap-2">
@@ -704,6 +971,11 @@ const CloseRunsheet = () => {
                   <span className="font-medium text-foreground">Grand Total:</span>
                   <span className="font-bold text-primary">₹{adjustedGrandTotal.toFixed(2)}</span>
                 </div>
+                {undeliveredAmount > 0 && (
+                  <p className="text-xs text-muted-foreground text-right">
+                    (COD Expected + Prepaid + Undelivered = ₹{reconciledGrandTotal.toFixed(2)})
+                  </p>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -949,21 +1221,37 @@ const CloseRunsheet = () => {
                 <div className="flex gap-3">
                   <Button 
                     onClick={handleVerifyCollection}
-                    disabled={!collectedAmount || verificationStatus === 'verified'}
-                    className="flex-1"
+                    disabled={verificationStatus === 'verified'}
+                    className="flex-1 bg-green-600 hover:bg-green-700 text-white"
                   >
                     <CheckCircle2 className="h-4 w-4 mr-2" />
                     Verify Collection
                   </Button>
-                  <Button 
-                    onClick={handleCloseRunsheet}
-                    disabled={verificationStatus !== 'verified' || isClosed}
-                    variant="default"
-                    className="flex-1"
-                  >
-                    Close Runsheet
-                  </Button>
                 </div>
+                
+                {verificationStatus === 'verified' && (
+                  <div className="p-3 rounded-lg bg-green-50 border border-green-200">
+                    <div className="flex items-center gap-2 text-green-700">
+                      <CheckCircle2 className="h-5 w-5" />
+                      <span className="font-semibold">Collection Verified Successfully</span>
+                    </div>
+                    <p className="text-sm text-green-600 mt-1">
+                      All amounts match. You can now close the runsheet from the header.
+                    </p>
+                  </div>
+                )}
+                
+                {verificationStatus === 'mismatch' && (
+                  <div className="p-3 rounded-lg bg-red-50 border border-red-200">
+                    <div className="flex items-center gap-2 text-red-700">
+                      <XCircle className="h-5 w-5" />
+                      <span className="font-semibold">Amount Mismatch</span>
+                    </div>
+                    <p className="text-sm text-red-600 mt-1">
+                      Please check all amounts. COD Collected + Online (UPI) must equal COD Expected, and Grand Total must match.
+                    </p>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>

@@ -1,6 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/StatusBadge";
-import { riders } from "@/data/orderData";
 import { useProducts } from "@/contexts/ProductContext";
 import { useOrders } from "@/contexts/OrderContext";
 import { useNotifications } from "@/contexts/NotificationContext";
@@ -1008,30 +1007,6 @@ const OrderDetail = () => {
               </CardContent>
             </Card>
 
-            {order.status === 'Packed' && (
-              <Card className="w-full">
-                <CardHeader>
-                  <CardTitle>Assign Rider</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex gap-4">
-                    <Select>
-                      <SelectTrigger className="flex-1">
-                        <SelectValue placeholder="Select rider" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {riders.filter(r => r.current_status === 'Available').map((rider) => (
-                          <SelectItem key={rider.id} value={rider.id}>
-                            {rider.name} - {rider.vehicle_number} (⭐ {rider.rating})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Button>Assign & Dispatch</Button>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
           </div>
 
           <div className="space-y-4 sm:space-y-6 lg:space-y-8 w-full lg:w-[450px]">
@@ -1061,22 +1036,6 @@ const OrderDetail = () => {
                           ? 'Delivered by'
                           : 'By'} {(order as any).assigned_rider_name}
                       </span>
-                      {/* Show undelivered reason if status is Undelivered */}
-                      {order.status === 'Undelivered' && (order as any).undelivered_reason && (
-                        <span className="text-xs text-red-600 mt-1 font-medium">
-                          Reason: {(() => {
-                            const reasonMap: Record<string, string> = {
-                              'customer_cancelled': 'Customer Cancelled',
-                              'wrong_address': 'Wrong Address',
-                              'damaged_item': 'Damaged Item',
-                              'payment_issue': 'Payment Issue',
-                              'customer_not_available': 'Customer Not Available',
-                              'others': 'Others'
-                            };
-                            return reasonMap[(order as any).undelivered_reason] || (order as any).undelivered_reason;
-                          })()}
-                        </span>
-                      )}
                     </div>
                   )}
                 </div>

@@ -2,7 +2,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/StatusBadge";
 import { type OrderStatus, type PaymentMode } from "@/data/orderData";
 import { useOrders } from "@/contexts/OrderContext";
-import { ArrowLeft, Search, Package, CheckCircle, XCircle, Clock, Calendar, MapPin, User, Phone, Filter, ChevronDown, ChevronUp, IndianRupee, Plus, Printer, CreditCard, CheckCircle2, XCircle as XCircleIcon, Truck, RotateCcw, AlertTriangle, Check, ArrowUpDown } from "lucide-react";
+import { ArrowLeft, Search, Package, CheckCircle, Clock, Calendar, MapPin, User, Phone, Filter, ChevronDown, ChevronUp, IndianRupee, Plus, Printer, CreditCard, CheckCircle2, XCircle as XCircleIcon, Truck, RotateCcw, AlertTriangle, Check, ArrowUpDown } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,7 +19,7 @@ import {
 
 const OrdersList = () => {
   const navigate = useNavigate();
-  const { orders, resetOrders, updateOrderStatus } = useOrders();
+  const { orders, updateOrderStatus } = useOrders();
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<OrderStatus | "all">("all");
   const [paymentFilter, setPaymentFilter] = useState<PaymentMode | "all">("all");
@@ -309,14 +309,6 @@ const OrdersList = () => {
           <Button variant="outline" className="flex items-center gap-2">
             <Printer className="h-4 w-4" />
             Multiple Print
-          </Button>
-          <Button 
-            variant="outline" 
-            className="flex items-center gap-2 text-orange-600 border-orange-200 hover:bg-orange-50"
-            onClick={resetOrders}
-          >
-            <XCircle className="h-4 w-4" />
-            Reset Orders
           </Button>
           {firstCancellationRequest && (
             <Button

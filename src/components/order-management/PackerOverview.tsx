@@ -44,8 +44,6 @@ import {
   Users,
   Award,
   Zap,
-  MoreVertical,
-  Grid3X3,
   UserPlus,
   Ban,
   Smartphone,
@@ -831,41 +829,6 @@ export default function PackerOverview() {
     setShowReassignDialog(true);
   };
 
-  const handleStartOrder = (orderId: string) => {
-    const order = orders.find(o => o.id === orderId);
-    if (order) {
-      console.log('🚀 Starting order:', orderId, order.order_number);
-      updateOrderStatusCentralized(orderId, 'pending', 'button');
-      toast.success(`Order ${order.order_number} started - Status changed to PENDING`);
-    } else {
-      console.error('Order not found:', orderId);
-      toast.error(`Order ${orderId} not found`);
-    }
-  };
-
-  const handleCompleteOrder = (orderId: string) => {
-    const order = orders.find(o => o.id === orderId);
-    if (order) {
-      console.log('✅ Completing order:', orderId, order.order_number);
-      updateOrderStatusCentralized(orderId, 'packed', 'button');
-      toast.success(`Order ${order.order_number} completed - Status changed to PACKED`);
-    } else {
-      console.error('Order not found:', orderId);
-      toast.error(`Order ${orderId} not found`);
-    }
-  };
-
-  const handleItemsNoStock = (orderId: string) => {
-    const order = orders.find(o => o.id === orderId);
-    if (order) {
-      console.log('🔴 Marking order as out of stock:', orderId, order.order_number);
-      updateOrderStatusCentralized(orderId, 'out_of_stock', 'button');
-      // Toast notification is handled in updateOrderStatusCentralized for out_of_stock
-    } else {
-      console.error('Order not found:', orderId);
-      toast.error(`Order ${orderId} not found`);
-    }
-  };
 
   const handleConfirmReassignment = () => {
     if (reassignPacker && orderToReassign) {
@@ -980,13 +943,12 @@ export default function PackerOverview() {
       updatePackerLastActive(order.assigned_packer_id);
     }
     
-    // Show different notifications based on source (don't show duplicate toast for button clicks)
+    // Show different notifications based on source
     if (source === 'mobile') {
       toast.success(`📱 Mobile Update: Order ${orderNumber} - ${newStatus.replace('_', ' ').toUpperCase()}`);
     } else if (source === 'api') {
       toast.success(`🔄 Real-time Update: Order ${orderNumber} - ${newStatus.replace('_', ' ').toUpperCase()}`);
     }
-    // Note: Button source notifications are handled in handleStartOrder, handleCompleteOrder, etc.
     
     // Show special notification for out of stock
     if (newStatus === 'out_of_stock') {
@@ -1289,45 +1251,6 @@ export default function PackerOverview() {
             <span className="text-sm">Auto Assign</span>
             <Switch checked={autoAssign} onCheckedChange={handleAutoAssignChange} />
           </div>
-          <Button 
-            variant="outline" 
-            onClick={() => {
-              // Simulate a mobile app order
-              const testOrder = {
-                customer_id: `C${Date.now()}`,
-                customer_name: 'Mobile Customer',
-                customer_phone: '+91 98765 43299',
-                address: '123 Mobile Street, Test Area, Test City, 110001',
-                lat: 28.4595,
-                lng: 77.0266,
-                zone: 'Zone A',
-                total_amount: 299,
-                payment_mode: 'Online' as const,
-                status: 'Placed' as const,
-                items: [
-                  {
-                    id: `OI${Date.now()}-1`,
-                    product_id: 'P001',
-                    product_name: 'Test Product',
-                    quantity: 2,
-                    price: 149.5,
-                    subtotal: 299,
-                    is_substituted: false
-                  }
-                ],
-                delivery_slot: '11:00 AM - 1:00 PM',
-                notes: 'Mobile app order',
-                discount: 0,
-                shipping_charges: 0,
-                pincode: '110001'
-              };
-              addOrder(testOrder);
-              toast.success('📱 Mobile app order created and auto-assigned!');
-            }}
-            className="bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100"
-          >
-            📱 Simulate Mobile Order
-          </Button>
         </div>
       </div>
 
@@ -1634,45 +1557,6 @@ export default function PackerOverview() {
                           >
                             Reassign
                           </Button>
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            className="h-7 px-2 text-xs"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleStartOrder(order.id);
-                            }}
-                          >
-                            <Grid3X3 className="h-3 w-3 mr-1" />
-                            Start
-                          </Button>
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            className="h-7 px-2 text-xs text-green-600 border-green-300 hover:bg-green-50"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleCompleteOrder(order.id);
-                            }}
-                          >
-                            <Grid3X3 className="h-3 w-3 mr-1" />
-                            Complete
-                          </Button>
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            className="h-7 px-2 text-xs text-red-600 border-red-300 hover:bg-red-50"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleItemsNoStock(order.id);
-                            }}
-                          >
-                            <Grid3X3 className="h-3 w-3 mr-1" />
-                            Items No Stock
-                          </Button>
-                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
-                            <MoreVertical className="h-4 w-4" />
-                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -1819,7 +1703,7 @@ export default function PackerOverview() {
                     const diffInDays = Math.floor(diffInHours / 24);
                     return `${diffInDays}d ago`;
                   })()}</span>
-                  <span>Zone: Promode Agro</span>
+                  {p.zone && <span>Zone: {p.zone}</span>}
                 </div>
                 
                 {/* WiFi, View Details Button, and Active Toggle - Aligned in one row with increased spacing */}
@@ -1934,7 +1818,7 @@ export default function PackerOverview() {
                     selectedPacker === packer.id
                             ? 'border-primary bg-primary/5'
                             : packer.hasOutOfStockItems
-                            ? 'border-red-500 bg-red-500 text-white hover:bg-red-600'
+                            ? 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100'
                             : 'hover:bg-muted/50'
                         } ${packer.sync_status === 'offline' ? 'opacity-60' : ''}`}
                         onClick={() => packer.sync_status !== 'offline' && handlePackerSelect(packer.id)}
@@ -1977,11 +1861,6 @@ export default function PackerOverview() {
                                   Packed: <span className="font-medium text-success">{packer.packedCount}</span>
                                 </span>
                               </div>
-                              {packer.zone && (
-                                <Badge variant="secondary" className="text-xs">
-                                  {packer.zone}
-                                </Badge>
-                              )}
                             </div>
 
                             <div className="flex items-center gap-2">
@@ -1991,9 +1870,9 @@ export default function PackerOverview() {
                                   style={{ width: `${packer.completionPercentage}%` }}
                                 />
                               </div>
-                              <span className="text-xs font-medium text-muted-foreground">
-                                {packer.completionPercentage}%
-                              </span>
+                            <span className="text-xs font-medium text-muted-foreground">
+                              {packer.completionPercentage}%
+                            </span>
                             </div>
                           </div>
 

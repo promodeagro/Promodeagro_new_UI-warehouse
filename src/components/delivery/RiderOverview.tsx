@@ -104,22 +104,49 @@ const RiderOverview = () => {
     // Listen for rider approval events to refresh the list
     window.addEventListener('riderApproved', loadApprovedRiders);
     
+    // Listen for runsheet closed event to refresh rider status
+    const handleRunsheetClosed = () => {
+      // Force re-render by creating a new object reference
+      setApprovedRidersFromOnboarding([...getApprovedRidersFromOnboarding()]);
+    };
+    window.addEventListener('runsheetClosed', handleRunsheetClosed);
+    
     return () => {
       window.removeEventListener('riderApproved', loadApprovedRiders);
+      window.removeEventListener('runsheetClosed', handleRunsheetClosed);
     };
   }, []);
 
   // Combine existing riders + newly approved riders from onboarding
   // This ensures Total Riders count includes both existing and newly approved riders
+  // Load updated rider data from localStorage to get latest current_runsheet_id and status
   // TODO: When API is ready, this will be a single API call that returns all riders
-  const allRiders: Rider[] = [
-    ...riders, // Existing riders
-    ...approvedRidersFromOnboarding // Newly approved riders from onboarding
-  ].map(rider => ({
-    ...rider,
-    // Use toggled status if exists, otherwise use rider's original active status
-    active: riderActiveStatus[rider.id] !== undefined ? riderActiveStatus[rider.id] : rider.active
-  }));
+  const allRiders: Rider[] = (() => {
+    let baseRiders = [
+      ...riders, // Existing riders
+      ...approvedRidersFromOnboarding // Newly approved riders from onboarding
+    ];
+    
+    // Merge with localStorage data to get updated current_runsheet_id and current_status
+    try {
+      const storedRiders = localStorage.getItem('warehouse-riders');
+      if (storedRiders) {
+        const parsed = JSON.parse(storedRiders);
+        baseRiders = baseRiders.map(rider => {
+          const stored = parsed.find((sr: any) => sr.id === rider.id);
+          return stored ? { ...rider, ...stored } : rider;
+        });
+      }
+    } catch (error) {
+      console.error('Error merging rider data from localStorage:', error);
+    }
+    
+    return baseRiders.map(rider => ({
+      ...rider,
+      // Use toggled status if exists, otherwise use rider's original active status
+      active: riderActiveStatus[rider.id] !== undefined ? riderActiveStatus[rider.id] : rider.active
+    }));
+  })();
 
   // Handler to toggle rider active/inactive status
   // When inactive, rider cannot be assigned runsheets
@@ -204,9 +231,24 @@ const RiderOverview = () => {
   
   // Helper function to get the current runsheet assigned to a rider
   // A rider can only have ONE runsheet assigned at a time (via current_runsheet_id)
+  // Checks both dummyData and localStorage to get the latest runsheet data
   // TODO: When API is ready, replace this with API call: getRunsheetById(runsheetId)
   const getRiderCurrentRunsheet = (rider: Rider) => {
     if (!rider.current_runsheet_id) return null;
+    
+    // First check localStorage for updated runsheets
+    try {
+      const storedRunsheets = localStorage.getItem('warehouse-runsheets');
+      if (storedRunsheets) {
+        const parsed = JSON.parse(storedRunsheets);
+        const found = parsed.find((r: Runsheet) => r.id === rider.current_runsheet_id);
+        if (found) return found;
+      }
+    } catch (error) {
+      console.error('Error reading runsheets from localStorage:', error);
+    }
+    
+    // Fall back to dummyData
     return runsheets.find(r => r.id === rider.current_runsheet_id) || null;
   };
   
@@ -468,11 +510,13 @@ const RiderOverview = () => {
                 <TableHead className="whitespace-nowrap">Rider ID</TableHead>
                 <TableHead className="whitespace-nowrap">Name</TableHead>
                 <TableHead className="whitespace-nowrap">Status</TableHead>
-                <TableHead className="whitespace-nowrap">No. of R.Sheet</TableHead>
+                 <TableHead className="whitespace-nowrap">Runsheet ID</TableHead>
                 <TableHead className="whitespace-nowrap">Orders</TableHead>
                 <TableHead className="whitespace-nowrap">Amounts</TableHead>
                 <TableHead className="whitespace-nowrap">Delivered</TableHead>
-                <TableHead className="whitespace-nowrap">Active/Inactive</TableHead>
+                <TableHead className="whitespace-nowrap">
+                  {statusFilter === 'active' ? 'Active' : statusFilter === 'inactive' ? 'Inactive' : 'Active/Inactive'}
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -609,14 +653,11 @@ const RiderOverview = () => {
                     })()}
                   </TableCell>
                   <TableCell>
-                    <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                    <div onClick={(e) => e.stopPropagation()}>
                       <Switch
                         checked={rider.active}
                         onCheckedChange={(checked) => handleToggleRiderActive(rider.id, checked)}
                       />
-                      <span className="text-sm text-muted-foreground">
-                        {rider.active ? 'Active' : 'Inactive'}
-                      </span>
                     </div>
                   </TableCell>
                 </TableRow>

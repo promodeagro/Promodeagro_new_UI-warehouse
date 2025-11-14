@@ -16,8 +16,9 @@ import {
   XCircle
 } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { runsheets as dummyRunsheets, orders as dummyOrders } from "@/data/dummyData";
-import type { Runsheet, Order } from "@/data/dummyData";
+import { runsheets as dummyRunsheets, orders as dummyOrders, riders as dummyRiders } from "@/data/dummyData";
+import type { Runsheet, Order, Rider } from "@/data/dummyData";
+import { downloadRunsheetReport } from "@/utils/runsheetReport";
 
 const RunsheetManagement = () => {
   const location = useLocation();
@@ -25,6 +26,36 @@ const RunsheetManagement = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<"pending" | "invalid" | "cash-pending" | "completed" | "closed">("pending");
   const [refreshKey, setRefreshKey] = useState(0);
+
+  const getRiderDetails = (riderId?: string): Rider | undefined => {
+    if (!riderId) return undefined;
+    try {
+      const storedRiders = localStorage.getItem('warehouse-riders');
+      if (storedRiders) {
+        const parsed: Rider[] = JSON.parse(storedRiders);
+        const found = parsed.find((r) => r.id === riderId);
+        if (found) {
+          return found;
+        }
+      }
+    } catch (error) {
+      console.error('Error loading riders from localStorage:', error);
+    }
+    return dummyRiders.find((r) => r.id === riderId);
+  };
+
+  const handleDownloadReport = (runsheet: Runsheet) => {
+    const runsheetOrders = (runsheet.orders_assigned || [])
+      .map((orderId) => allOrders.find((order) => order.id === orderId))
+      .filter(Boolean) as Order[];
+
+    const riderDetails = getRiderDetails(runsheet.rider_id);
+
+    downloadRunsheetReport(runsheet, runsheetOrders, {
+      filename: `${runsheet.id}-report.csv`,
+      riderPhone: riderDetails?.phone,
+    });
+  };
 
   // Handle navigation state to set active tab
   useEffect(() => {
@@ -72,15 +103,40 @@ const RunsheetManagement = () => {
     return ordersList;
   }, [refreshKey]);
 
-  // Listen for runsheet updates
+  // Listen for runsheet updates and order status changes
+  // This ensures runsheets move to "Completed" tab when:
+  // 1. Rider updates delivery status via mobile app
+  // 2. Manual status changes in warehouse portal
   useEffect(() => {
     const handleRunsheetUpdated = () => {
       setRefreshKey(prev => prev + 1);
     };
 
+    const handleStorageChange = (e: StorageEvent) => {
+      // Refresh when orders are updated in localStorage
+      if (e.key === 'warehouse-orders') {
+        setRefreshKey(prev => prev + 1);
+      }
+    };
+
     window.addEventListener('runsheetUpdated', handleRunsheetUpdated);
+    window.addEventListener('orderStatusUpdated', handleRunsheetUpdated);
+    window.addEventListener('storage', handleStorageChange);
+    
+    // Also poll for changes (fallback for same-window updates)
+    // Events handle most cases, but polling ensures we catch any missed updates
+    const pollInterval = setInterval(() => {
+      const storedOrders = localStorage.getItem('warehouse-orders');
+      if (storedOrders) {
+        setRefreshKey(prev => prev + 1);
+      }
+    }, 3000); // Poll every 3 seconds (events handle immediate updates)
+    
     return () => {
       window.removeEventListener('runsheetUpdated', handleRunsheetUpdated);
+      window.removeEventListener('orderStatusUpdated', handleRunsheetUpdated);
+      window.removeEventListener('storage', handleStorageChange);
+      clearInterval(pollInterval);
     };
   }, []);
 
@@ -100,9 +156,13 @@ const RunsheetManagement = () => {
         .map(orderId => allOrders.find(o => o.id === orderId))
         .filter(Boolean) as Order[];
       
-      // Check if all orders are delivered
+      // Check if all orders are delivered (case-insensitive check)
+      // Works for both rider updates and manual status changes
       const allOrdersDelivered = runsheetOrders.length > 0 && 
-        runsheetOrders.every(order => order?.status === 'Delivered');
+        runsheetOrders.every(order => {
+          const status = (order?.status || '').toString().toLowerCase();
+          return status === 'delivered';
+        });
       
       if (activeTab === "pending") {
         // Pending: Newly created runsheets (status = "Created")
@@ -110,9 +170,8 @@ const RunsheetManagement = () => {
       }
       
       if (activeTab === "completed") {
-        // Completed: All orders are delivered but runsheet not yet closed
-        // (status is "In Transit" and all orders are delivered)
-        return runsheet.status === "In Transit" && allOrdersDelivered;
+        // Completed runsheets: all orders delivered, but runsheet not yet closed
+        return allOrdersDelivered && runsheet.status !== "Completed";
       }
       
       if (activeTab === "closed") {
@@ -366,13 +425,24 @@ const RunsheetManagement = () => {
                           </div>
                         </div>
                         <div className="flex gap-3 mt-1">
-                          <Link to={`/delivery/runsheet-management/closerunsheet/${runsheet.id}`} state={{ from: '/delivery/runsheets' }}>
+                          <Link 
+                            to={activeTab === 'closed' 
+                              ? `/delivery/runsheets/${runsheet.id}/closed`
+                              : `/delivery/runsheet-management/closerunsheet/${runsheet.id}`
+                            } 
+                            state={{ from: '/delivery/runsheets', activeTab }}
+                          >
                             <Button size="sm" variant="outline" className="gap-2">
                               <Eye className="h-3 w-3" />
                               View Details
                             </Button>
                           </Link>
-                          <Button variant="ghost" size="sm" className="text-muted-foreground">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-muted-foreground"
+                            onClick={() => handleDownloadReport(runsheet)}
+                          >
                             Download Report
                           </Button>
                         </div>
