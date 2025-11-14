@@ -1,5 +1,5 @@
 import { useParams, Link, useLocation } from "react-router-dom";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -9,6 +9,7 @@ import { ArrowLeft, Package, DollarSign, TrendingUp, Calendar, MapPin } from "lu
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { riders, runsheets, orders } from "@/data/dummyData";
 import type { Runsheet, Order } from "@/data/dummyData";
+import { downloadRunsheetReport } from "@/utils/runsheetReport";
 
 // Get all orders (from dummy data and localStorage)
 // This ensures we get orders from edited runsheets too
@@ -42,22 +43,27 @@ const getAllOrders = (): Order[] => {
 // TODO: When API is ready, replace this with API call: getRunsheetsByRiderId(riderId)
 const getRiderRunsheets = (riderId: string) => {
   // Get runsheets from localStorage (created/edited runsheets) or use dummy data
-  let allRunsheetsList: Runsheet[] = [];
+  // localStorage runsheets override dummy data for same IDs
+  let allRunsheetsList: Runsheet[] = [...runsheets];
   const storedRunsheets = localStorage.getItem('warehouse-runsheets');
   
   if (storedRunsheets) {
     try {
-      const parsedRunsheets = JSON.parse(storedRunsheets);
-      // Merge with dummy data (dummy data takes precedence for existing IDs)
-      const dummyRunsheetIds = new Set(runsheets.map(r => r.id));
-      const newRunsheets = parsedRunsheets.filter((r: Runsheet) => !dummyRunsheetIds.has(r.id));
-      allRunsheetsList = [...runsheets, ...newRunsheets];
+      const parsedRunsheets: Runsheet[] = JSON.parse(storedRunsheets);
+      // Merge: localStorage runsheets override dummy data for same IDs
+      const runsheetMap = new Map<string, Runsheet>();
+      
+      // Add dummy data first
+      runsheets.forEach(r => runsheetMap.set(r.id, r));
+      
+      // Override with localStorage data (this includes closed runsheets with status 'Completed')
+      parsedRunsheets.forEach((r: Runsheet) => runsheetMap.set(r.id, r));
+      
+      allRunsheetsList = Array.from(runsheetMap.values());
     } catch (error) {
       console.error('Error parsing stored runsheets:', error);
       allRunsheetsList = [...runsheets];
     }
-  } else {
-    allRunsheetsList = [...runsheets];
   }
   
   // Filter runsheets by rider_id
@@ -118,6 +124,8 @@ const getRiderRunsheets = (riderId: string) => {
       codCollected,
       prepaidTotal,
       completionRate,
+      orders: runsheetOrders,
+      rawRunsheet: rs,
     };
   });
 };
@@ -126,11 +134,13 @@ const RiderRunsheets = () => {
   const { riderId } = useParams();
   const rider = riders.find(r => r.id === riderId);
   const location = useLocation();
-  const [refreshKey, setRefreshKey] = useState(0); // Force re-render when orders update
+  const [refreshKey, setRefreshKey] = useState(0); // Force re-render when orders/runsheets update
   
   // Get runsheets (will recalculate when refreshKey changes)
-  // refreshKey is used to force recalculation when orders are updated from mobile app
-  const runsheets = getRiderRunsheets(riderId || '');
+  // refreshKey is used to force recalculation when orders or runsheets are updated
+  const runsheets = useMemo(() => {
+    return getRiderRunsheets(riderId || '');
+  }, [riderId, refreshKey]);
   
   /**
    * ============================================================================
@@ -170,37 +180,44 @@ const RiderRunsheets = () => {
    * This will work when order updates are stored in localStorage
    */
   useEffect(() => {
-    // Listen for order updates from localStorage or events
-    const handleOrderUpdate = () => {
-      // Force component to recalculate with updated orders
+    // Listen for order updates and runsheet updates from localStorage or events
+    const handleUpdate = () => {
+      // Force component to recalculate with updated data
       setRefreshKey(prev => prev + 1);
     };
     
     // Listen for custom order update events
-    window.addEventListener('orderStatusUpdated', handleOrderUpdate);
-    window.addEventListener('riderOrderCompleted', handleOrderUpdate);
+    window.addEventListener('orderStatusUpdated', handleUpdate);
+    window.addEventListener('riderOrderCompleted', handleUpdate);
+    
+    // Listen for runsheet updates (including when runsheets are closed)
+    window.addEventListener('runsheetUpdated', handleUpdate);
+    window.addEventListener('runsheetClosed', handleUpdate);
     
     // Also listen for storage events (when localStorage is updated)
     window.addEventListener('storage', (e) => {
-      if (e.key === 'warehouse-orders') {
-        handleOrderUpdate();
+      if (e.key === 'warehouse-orders' || e.key === 'warehouse-runsheets') {
+        handleUpdate();
       }
     });
     
     // Poll for updates (fallback - will be replaced with real-time sync via API)
     // TODO: Remove polling when API real-time sync is implemented
     const pollInterval = setInterval(() => {
-      // Check if orders have been updated
+      // Check if orders or runsheets have been updated
       const storedOrders = localStorage.getItem('warehouse-orders');
-      if (storedOrders) {
-        // Force refresh to recalculate with latest order data
+      const storedRunsheets = localStorage.getItem('warehouse-runsheets');
+      if (storedOrders || storedRunsheets) {
+        // Force refresh to recalculate with latest data
         setRefreshKey(prev => prev + 1);
       }
-    }, 5000); // Poll every 5 seconds (will be replaced with real-time sync)
+    }, 3000); // Poll every 3 seconds (will be replaced with real-time sync)
     
     return () => {
-      window.removeEventListener('orderStatusUpdated', handleOrderUpdate);
-      window.removeEventListener('riderOrderCompleted', handleOrderUpdate);
+      window.removeEventListener('orderStatusUpdated', handleUpdate);
+      window.removeEventListener('riderOrderCompleted', handleUpdate);
+      window.removeEventListener('runsheetUpdated', handleUpdate);
+      window.removeEventListener('runsheetClosed', handleUpdate);
       clearInterval(pollInterval);
     };
   }, [riderId]);
@@ -208,6 +225,21 @@ const RiderRunsheets = () => {
   // Tabs: Active / Closed
   const defaultTabFromState = (location.state as any)?.defaultTab as 'active' | 'closed' | undefined;
   const [tab, setTab] = useState<'active' | 'closed'>(defaultTabFromState || 'active');
+  
+  // Update tab when location state changes (e.g., when navigating from CloseRunsheet)
+  useEffect(() => {
+    const stateTab = (location.state as any)?.defaultTab as 'active' | 'closed' | undefined;
+    if (stateTab && stateTab !== tab) {
+      setTab(stateTab);
+      return;
+    }
+
+    // If there are no active runsheets, automatically show the Closed tab
+    const hasActiveRunsheets = runsheets.some(r => r.status !== 'Completed');
+    if (!hasActiveRunsheets && tab !== 'closed') {
+      setTab('closed');
+    }
+  }, [location.state, tab, runsheets]);
 
   // Calculate summary statistics from all runsheets
   // These calculations work with actual order data and update when runsheets are edited
@@ -431,12 +463,32 @@ const RiderRunsheets = () => {
 
                 {/* Right: Actions */}
                 <div className="flex flex-col gap-2 justify-center">
-                  <Link to={`/delivery/runsheets/${runsheet.id}`}>
+                  <Link 
+                    to={tab === 'closed' 
+                      ? `/delivery/runsheets/${runsheet.id}/closed`
+                      : `/delivery/runsheets/${runsheet.id}`
+                    }
+                    state={{
+                      from: `/delivery/rider-overview/runsheets-history/${riderId}`,
+                      defaultTab: tab,
+                    }}
+                  >
                     <Button variant="outline" className="w-full">
                       View Details
                     </Button>
                   </Link>
-                  <Button variant="ghost" size="sm">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      downloadRunsheetReport(runsheet.rawRunsheet as Runsheet, runsheet.orders, {
+                        filename: `${runsheet.id}-report.csv`,
+                        riderPhone: rider?.phone,
+                        codCollectedOverride: runsheet.codCollected,
+                        prepaidTotalOverride: runsheet.prepaidTotal,
+                      })
+                    }
+                  >
                     Download Report
                   </Button>
                 </div>

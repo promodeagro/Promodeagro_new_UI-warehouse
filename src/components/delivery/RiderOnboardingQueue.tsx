@@ -14,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Users, Search, Eye, CheckCircle, XCircle, UserX, Calendar, Smartphone, RotateCcw, Hourglass } from "lucide-react";
+import { Users, Search, Eye, CheckCircle, XCircle, UserX, Calendar, Hourglass } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 type RiderStatus = "Pending" | "Active" | "Inactive" | "Rejected" | "Incompleted";
@@ -474,117 +474,6 @@ const RiderOnboardingQueue = () => {
     window.dispatchEvent(new CustomEvent('riderApplicationUpdated', { detail: { riderId: rider.rider_id, status: newStatus } }));
   };
 
-  // Simulate mobile app adding a new rider application (for testing)
-  const handleSimulateMobile = () => {
-    const testRiders = [
-      {
-        id: Date.now().toString(),
-        rider_name: "Rajesh Kumar",
-        rider_id: `RD${Date.now()}`,
-        mobile: "+91 98765 43210",
-        city: "Delhi",
-        vehicle_type: "2-Wheeler" as const,
-        license_number: `DL-01-${Math.floor(Math.random() * 10000)}`,
-        aadhaar_number: `${Math.floor(Math.random() * 10000)}-${Math.floor(Math.random() * 10000)}-${Math.floor(Math.random() * 10000)}`,
-        pan_card: `ABCDE${Math.floor(Math.random() * 10000)}F`,
-        joining_date: new Date().toISOString().split('T')[0],
-        status: "Pending" as RiderStatus,
-        dob: "1995-05-15",
-        address: "123 Main Street, Delhi",
-        emergency_contact: "+91 98765 12345",
-        email: `rajesh${Date.now()}@example.com`,
-        bank_name: "HDFC Bank",
-        account_number: `${Math.floor(Math.random() * 10000000000)}`,
-        ifsc_code: "HDFC0001234",
-        account_holder_name: "Rajesh Kumar",
-        _simulated: true, // Flag to identify simulated riders
-      },
-      {
-        id: (Date.now() + 1).toString(),
-        rider_name: "Amit Singh",
-        rider_id: `RD${Date.now() + 1}`,
-        mobile: "+91 98765 43211",
-        city: "Mumbai",
-        vehicle_type: "3-Wheeler" as const,
-        license_number: `MH-01-${Math.floor(Math.random() * 10000)}`,
-        aadhaar_number: `${Math.floor(Math.random() * 10000)}-${Math.floor(Math.random() * 10000)}-${Math.floor(Math.random() * 10000)}`,
-        pan_card: `FGHIJ${Math.floor(Math.random() * 10000)}K`,
-        joining_date: new Date().toISOString().split('T')[0],
-        status: "Pending" as RiderStatus,
-        dob: "1990-08-20",
-        address: "456 Park Avenue, Mumbai",
-        emergency_contact: "+91 98765 12346",
-        email: `amit${Date.now()}@example.com`,
-        bank_name: "SBI Bank",
-        account_number: `${Math.floor(Math.random() * 10000000000)}`,
-        ifsc_code: "SBIN0001234",
-        account_holder_name: "Amit Singh",
-        _simulated: true, // Flag to identify simulated riders
-      },
-    ];
-
-    // Pick random rider for this simulation
-    const newRider = testRiders[Math.floor(Math.random() * testRiders.length)];
-    
-    // Add to localStorage
-    const existing = JSON.parse(localStorage.getItem('riderApplications') || '[]');
-    existing.push(newRider);
-    localStorage.setItem('riderApplications', JSON.stringify(existing));
-    
-    // Update state
-    setRiders(existing);
-    setRefreshKey(k => k + 1);
-    
-    // Show notification
-    toast({
-      title: "New Rider Application",
-      description: `${newRider.rider_name} has submitted a new application`,
-    });
-    
-    // Dispatch event (simulating mobile app)
-    window.dispatchEvent(new CustomEvent('newRiderApplication', { 
-      detail: { rider_name: newRider.rider_name } 
-    }));
-  };
-
-  // Reset only simulated riders (keep existing real riders)
-  const handleResetRiders = () => {
-    try {
-      // Get all applications
-      const allApplications = JSON.parse(localStorage.getItem('riderApplications') || '[]');
-      
-      // Filter out only simulated riders (keep existing real riders)
-      const realRiders = allApplications.filter((rider: any) => !rider._simulated);
-      
-      // Update localStorage with only real riders
-      localStorage.setItem('riderApplications', JSON.stringify(realRiders));
-      
-      // Update state
-      setRiders(realRiders);
-      setRefreshKey(k => k + 1);
-      
-      // Count how many were deleted
-      const deletedCount = allApplications.length - realRiders.length;
-      
-      // Show notification
-      toast({
-        title: "Simulated Riders Reset",
-        description: deletedCount > 0 
-          ? `${deletedCount} simulated rider(s) deleted. ${realRiders.length} existing rider(s) kept.`
-          : "No simulated riders to delete. All existing riders are kept.",
-      });
-      
-      // Dispatch events to update other screens
-      window.dispatchEvent(new Event('riderApproved'));
-    } catch (error) {
-      console.error('Error resetting simulated riders:', error);
-      toast({
-        title: "Error",
-        description: "Failed to reset simulated riders",
-        variant: "destructive",
-      });
-    }
-  };
 
 const getStatusBadgeStyles = (status: RiderStatus, isIncomplete: boolean) => {
   // Always show "Pending" for incomplete applications or if status is "Incompleted"
@@ -764,24 +653,6 @@ const getStatusBadgeStyles = (status: RiderStatus, isIncomplete: boolean) => {
           <div>
             <h1 className="text-2xl font-semibold text-foreground">Rider Onboarding Queue</h1>
             <p className="text-sm text-muted-foreground">Manage and review rider applications</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button 
-              variant="outline" 
-              onClick={handleSimulateMobile}
-              className="flex items-center gap-2"
-            >
-              <Smartphone className="h-4 w-4" />
-              Simulate Mobile
-            </Button>
-            <Button 
-              variant="destructive" 
-              onClick={handleResetRiders}
-              className="flex items-center gap-2"
-            >
-              <RotateCcw className="h-4 w-4" />
-              Reset Riders
-            </Button>
           </div>
         </div>
 

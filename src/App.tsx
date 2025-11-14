@@ -86,6 +86,7 @@ import DeliveryAction from '@/components/delivery/DeliveryAction';
 import CashVerificationDetails from '@/components/delivery/CashVerificationDetails';
 import CollectionDetailsView from '@/components/delivery/CollectionDetailsView';
 import CloseRunsheet from '@/components/delivery/CloseRunsheet';
+import ClosedRunsheetSummary from '@/components/delivery/ClosedRunsheetSummary';
 import RiderOnboardingQueue from '@/components/delivery/RiderOnboardingQueue';
 import RiderApplicationDetails from '@/components/delivery/RiderApplicationDetails';
 
@@ -149,6 +150,7 @@ function App() {
                   <Route path="/delivery/rider-overview" element={<RiderOverview />} />
                   <Route path="/delivery/runsheets" element={<RunsheetManagement />} />
                   <Route path="/delivery/runsheets/:id" element={<CloseRunsheet />} />
+                  <Route path="/delivery/runsheets/:id/closed" element={<ClosedRunsheetSummary />} />
                   <Route path="/delivery/runsheets/view/:id" element={<CloseRunsheet />} />
                   <Route path="/delivery/runsheet-management/closerunsheet/:id" element={<CloseRunsheet />} />
                   <Route path="/delivery/create-runsheet" element={<CreateRunsheet />} />

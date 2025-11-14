@@ -262,7 +262,8 @@ const CreateRunsheet = () => {
   const [scannedOrders, setScannedOrders] = useState<Order[]>([]);
   const [scanMode, setScanMode] = useState(false);
   const [approvedRidersFromOnboarding, setApprovedRidersFromOnboarding] = useState<Rider[]>([]);
-  
+  const [riderDataVersion, setRiderDataVersion] = useState(0);
+ 
   // Packed orders fetched from API (or dummy data for now)
   // TODO: When API is ready, this will be fetched from the backend
   const [packedOrders, setPackedOrders] = useState<Order[]>([]);
@@ -290,6 +291,20 @@ const CreateRunsheet = () => {
     
     return () => {
       window.removeEventListener('riderApproved', loadApprovedRiders);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleRiderDataChange = () => {
+      setRiderDataVersion((prev) => prev + 1);
+    };
+
+    window.addEventListener('runsheetClosed', handleRiderDataChange);
+    window.addEventListener('storage', handleRiderDataChange);
+
+    return () => {
+      window.removeEventListener('runsheetClosed', handleRiderDataChange);
+      window.removeEventListener('storage', handleRiderDataChange);
     };
   }, []);
 
@@ -465,16 +480,39 @@ const CreateRunsheet = () => {
     } catch {}
   }, [isEditMode, editRunsheetId]);
 
-  // Combine existing riders + newly approved riders from onboarding
-  // TODO: When API is ready, this will be a single API call that returns all riders
-  const allRiders: Rider[] = [
-    ...riders, // Existing riders
-    ...approvedRidersFromOnboarding // Newly approved riders from onboarding
-  ];
+  const baseRiders: Rider[] = useMemo(() => [
+    ...riders,
+    ...approvedRidersFromOnboarding,
+  ], [approvedRidersFromOnboarding]);
 
-  // Show all active riders for runsheet assignment
-  // Only filter by active status, not current_status (rider can be assigned runsheet even if busy)
-  const availableRiders = allRiders.filter(r => r.active);
+  const allRiders: Rider[] = useMemo(() => {
+    const merged = baseRiders.map(rider => ({ ...rider }));
+    try {
+      const storedRiders = localStorage.getItem('warehouse-riders');
+      if (storedRiders) {
+        const parsed = JSON.parse(storedRiders);
+        return merged.map(rider => {
+          const stored = parsed.find((sr: any) => sr.id === rider.id);
+          return stored ? { ...rider, ...stored } : rider;
+        });
+      }
+    } catch (error) {
+      console.error('Error merging rider data from localStorage:', error);
+    }
+    return merged;
+  }, [baseRiders, riderDataVersion]);
+
+  const riderHasActiveRunsheet = (rider: Rider) => {
+    if (!rider.current_runsheet_id) return false;
+    if (isEditMode && rider.current_runsheet_id === currentRunsheetId) return false;
+    return true;
+  };
+
+  const activeRiders = useMemo(() => allRiders.filter(r => r.active), [allRiders]);
+  const selectableRiders = useMemo(
+    () => activeRiders.filter(r => !riderHasActiveRunsheet(r)),
+    [activeRiders, isEditMode, currentRunsheetId]
+  );
   
   /**
    * ============================================================================
@@ -698,6 +736,15 @@ const CreateRunsheet = () => {
       return;
     }
 
+    if (riderHasActiveRunsheet(rider)) {
+      toast({
+        title: "Rider Already Assigned",
+        description: `Close runsheet ${rider.current_runsheet_id} before creating a new one for this rider`,
+        variant: "destructive"
+      });
+      return;
+    }
+
     // Create/edit runsheet object (preserve original fields in edit mode)
     let baseCreatedAt = new Date().toISOString();
     let baseStatus: Runsheet['status'] = 'Created';
@@ -822,6 +869,7 @@ const CreateRunsheet = () => {
         if (riderIndex !== -1) {
           ridersList[riderIndex].current_runsheet_id = runsheetId;
           localStorage.setItem('warehouse-riders', JSON.stringify(ridersList));
+          setRiderDataVersion(prev => prev + 1);
         }
       }
 
@@ -963,15 +1011,23 @@ const CreateRunsheet = () => {
                   <Label>Select Rider *</Label>
                   <Select value={selectedRider} onValueChange={setSelectedRider}>
                     <SelectTrigger>
-                      <SelectValue placeholder={availableRiders.length > 0 ? "Choose rider" : "No riders available"} />
+                      <SelectValue placeholder={selectableRiders.length > 0 ? "Choose rider" : "No riders available"} />
                     </SelectTrigger>
                     <SelectContent className="z-[9999]" position="popper" sideOffset={4}>
-                      {availableRiders.length > 0 ? (
-                        availableRiders.map(rider => (
-                        <SelectItem key={rider.id} value={rider.id}>
-                          {rider.name} - {rider.vehicle_type}
-                        </SelectItem>
-                        ))
+                      {activeRiders.length > 0 ? (
+                        activeRiders.map(rider => {
+                          const disabled = riderHasActiveRunsheet(rider);
+                          return (
+                            <SelectItem
+                              key={rider.id}
+                              value={rider.id}
+                              disabled={disabled}
+                            >
+                              {rider.name} - {rider.vehicle_type}
+                              {disabled && rider.current_runsheet_id ? ` (Assigned: ${rider.current_runsheet_id})` : ''}
+                            </SelectItem>
+                          );
+                        })
                       ) : (
                         <SelectItem value="" disabled>No active riders available</SelectItem>
                       )}
@@ -979,7 +1035,7 @@ const CreateRunsheet = () => {
                   </Select>
                   {selectedRider && (
                     <p className="text-xs text-muted-foreground mt-1">
-                      {riders.find(r => r.id === selectedRider)?.phone}
+                      {allRiders.find(r => r.id === selectedRider)?.phone}
                     </p>
                   )}
                 </div>

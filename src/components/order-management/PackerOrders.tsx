@@ -21,7 +21,6 @@ import {
   Users,
   Award,
   Zap,
-  MoreVertical,
   UserPlus,
   Ban,
   Smartphone,
@@ -29,7 +28,6 @@ import {
   PackagePlus,
   Wifi,
   WifiOff,
-  Grid3X3,
 } from "lucide-react";
 import {
   Table,
@@ -113,34 +111,10 @@ export default function PackerOrders() {
     }
   };
 
-  // Handler functions for action buttons
+  // Handler function for reassign button
   const handleReassignOrder = (orderId: string) => {
     console.log('🔄 Reassigning order:', orderId);
     // TODO: Implement reassign functionality
-  };
-
-  const handleStartOrder = (orderId: string) => {
-    const order = orders.find(o => o.id === orderId);
-    if (order) {
-      console.log('🚀 Starting order:', orderId);
-      // TODO: Implement start functionality
-    }
-  };
-
-  const handleCompleteOrder = (orderId: string) => {
-    const order = orders.find(o => o.id === orderId);
-    if (order) {
-      console.log('✅ Completing order:', orderId);
-      // TODO: Implement complete functionality
-    }
-  };
-
-  const handleItemsNoStock = (orderId: string) => {
-    const order = orders.find(o => o.id === orderId);
-    if (order) {
-      console.log('🔴 Marking order as out of stock:', orderId);
-      // TODO: Implement items no stock functionality
-    }
   };
 
   const getSyncStatusColor = (status: string) => {
@@ -371,36 +345,6 @@ export default function PackerOrders() {
                                   onClick={() => handleReassignOrder(order.id)}
                                 >
                                   Reassign
-                                </Button>
-                                <Button 
-                                  variant="outline" 
-                                  size="sm" 
-                                  className="h-7 px-2 text-xs"
-                                  onClick={() => handleStartOrder(order.id)}
-                                >
-                                  <Grid3X3 className="h-3 w-3 mr-1" />
-                                  Start
-                                </Button>
-                                <Button 
-                                  variant="outline" 
-                                  size="sm" 
-                                  className="h-7 px-2 text-xs text-green-600 border-green-300 hover:bg-green-50"
-                                  onClick={() => handleCompleteOrder(order.id)}
-                                >
-                                  <Grid3X3 className="h-3 w-3 mr-1" />
-                                  Complete
-                                </Button>
-                                <Button 
-                                  variant="outline" 
-                                  size="sm" 
-                                  className="h-7 px-2 text-xs text-red-600 border-red-300 hover:bg-red-50"
-                                  onClick={() => handleItemsNoStock(order.id)}
-                                >
-                                  <Grid3X3 className="h-3 w-3 mr-1" />
-                                  Items No Stock
-                                </Button>
-                                <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
-                                  <MoreVertical className="h-4 w-4" />
                                 </Button>
                               </div>
                             </TableCell>

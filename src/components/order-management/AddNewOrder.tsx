@@ -321,7 +321,7 @@ const AddNewOrder = () => {
       } else {
         // Customer not found
         setIsNewCustomer(true);
-        setCustomerLookupMessage('❌ Customer not found. Please Enter details manually.');
+        setCustomerLookupMessage('❌ New customer - Enter details manually');
         setCustomerId(null);
       }
     } catch (error) {
@@ -339,7 +339,7 @@ const AddNewOrder = () => {
         setCustomerLookupMessage('❌ Server error. Please try again later.');
       } else {
         // Other errors (JSON parsing, etc.)
-        setCustomerLookupMessage('❌ Unable to connect to database. Please Enter details manually.');
+        setCustomerLookupMessage('❌ Unable to connect - Enter details manually');
       }
     } finally {
       setIsLookingUpCustomer(false);
@@ -390,48 +390,45 @@ const AddNewOrder = () => {
   };
 
   // Handle adding new address
-  const handleAddNewAddress = async () => {
-    if (!customerId) return;
-
-    try {
-      const response = await fetch(`/api/customers/${customerId}/addresses`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          phone: newAddress.phone,
-          name: newAddress.name,
-          flatNo: newAddress.flatNo,
-          area: newAddress.area,
-          landmark: newAddress.landmark,
-          pincode: newAddress.pincode
-        })
-      });
-
-      if (response.ok) {
-        const addedAddress = await response.json();
-        setCustomerAddresses([...customerAddresses, addedAddress]);
-        
-        // Reset form
-        setNewAddress({
-          phone: '',
-          name: '',
-          flatNo: '',
-          area: '',
-          landmark: '',
-          pincode: ''
-        });
-        
-        setShowAddAddressDialog(false);
-        console.log('Address added successfully');
-      } else {
-        throw new Error('Failed to add address');
-      }
-    } catch (error) {
-      console.error('Error adding address:', error);
-      alert('Failed to add address. Please try again.');
+  const handleAddNewAddress = () => {
+    // Validate all fields are filled
+    if (!newAddress.phone || !newAddress.name || !newAddress.flatNo || !newAddress.area || !newAddress.landmark || !newAddress.pincode) {
+      alert('Please fill in all address fields');
+      return;
     }
+
+    // Add the new address to the list with a unique ID
+    const addressWithId = {
+      id: `addr_${Date.now()}`,
+      ...newAddress
+    };
+    
+    // Add to customerAddresses list
+    setCustomerAddresses([...customerAddresses, addressWithId]);
+    
+    // Also update the current customer info with the new address (set as current address)
+    setCustomerInfo({
+      ...customerInfo,
+      phone: newAddress.phone,
+      name: newAddress.name,
+      flatNo: newAddress.flatNo,
+      area: newAddress.area,
+      landmark: newAddress.landmark,
+      pincode: newAddress.pincode
+    });
+    
+    // Reset form
+    setNewAddress({
+      phone: '',
+      name: '',
+      flatNo: '',
+      area: '',
+      landmark: '',
+      pincode: ''
+    });
+    
+    setShowAddAddressDialog(false);
+    console.log('Address added successfully');
   };
 
   const handleAddItem = (productId: string, quantity: number) => {
