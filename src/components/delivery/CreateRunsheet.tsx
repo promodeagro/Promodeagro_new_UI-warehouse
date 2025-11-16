@@ -1023,9 +1023,9 @@ const CreateRunsheet = () => {
                               value={rider.id}
                               disabled={disabled}
                             >
-                              {rider.name} - {rider.vehicle_type}
+                          {rider.name} - {rider.vehicle_type}
                               {disabled && rider.current_runsheet_id ? ` (Assigned: ${rider.current_runsheet_id})` : ''}
-                            </SelectItem>
+                        </SelectItem>
                           );
                         })
                       ) : (

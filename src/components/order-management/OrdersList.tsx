@@ -2,14 +2,18 @@ import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/StatusBadge";
 import { type OrderStatus, type PaymentMode } from "@/data/orderData";
 import { useOrders } from "@/contexts/OrderContext";
-import { ArrowLeft, Search, Package, CheckCircle, Clock, Calendar, MapPin, User, Phone, Filter, ChevronDown, ChevronUp, IndianRupee, Plus, Printer, CreditCard, CheckCircle2, XCircle as XCircleIcon, Truck, RotateCcw, AlertTriangle, Check, ArrowUpDown } from "lucide-react";
+import { ArrowLeft, Search, Package, CheckCircle, Clock, Calendar, MapPin, User, Phone, Filter, ChevronDown, ChevronUp, IndianRupee, Plus, Printer, CreditCard, CheckCircle2, XCircle as XCircleIcon, Truck, RotateCcw, AlertTriangle, Check, ArrowUpDown, UserPlus, AlertCircle } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { useState, useMemo } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { toast } from "sonner";
+import { useState, useMemo, useEffect } from "react";
+import { packers } from "@/data/packerData";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,7 +23,7 @@ import {
 
 const OrdersList = () => {
   const navigate = useNavigate();
-  const { orders, updateOrderStatus } = useOrders();
+  const { orders, updateOrderStatus, updateOrder } = useOrders();
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<OrderStatus | "all">("all");
   const [paymentFilter, setPaymentFilter] = useState<PaymentMode | "all">("all");
@@ -29,6 +33,96 @@ const OrdersList = () => {
   const [pincodeFilter, setPincodeFilter] = useState<string>("all");
   const [showFilters, setShowFilters] = useState(false);
   const [selectedOrders, setSelectedOrders] = useState<Set<string>>(new Set());
+  
+  // Assign order dialog state
+  const [autoAssign, setAutoAssign] = useState<boolean>(() => {
+    const saved = localStorage.getItem('packerAutoAssign');
+    return saved !== null ? saved === 'true' : true;
+  });
+  const [showAssignDialog, setShowAssignDialog] = useState(false);
+  const [selectedPacker, setSelectedPacker] = useState<string>('');
+  const [packerSearchQuery, setPackerSearchQuery] = useState('');
+  
+  // Listen for auto-assign changes
+  useEffect(() => {
+    const handleAutoAssignChange = (event: CustomEvent) => {
+      setAutoAssign(event.detail.autoAssign);
+    };
+    window.addEventListener('packerAutoAssignChanged', handleAutoAssignChange as EventListener);
+    return () => {
+      window.removeEventListener('packerAutoAssignChanged', handleAutoAssignChange as EventListener);
+    };
+  }, []);
+  
+  // Get all packers (static + saved from localStorage)
+  const getAllPackers = useMemo(() => {
+    try {
+      const savedPackers = JSON.parse(localStorage.getItem('warehouse-packers') || '[]');
+      const savedIds = new Set(savedPackers.map((p: any) => p.id));
+      const staticPackers = packers.filter(p => !savedIds.has(p.id));
+      return [...savedPackers, ...staticPackers];
+    } catch (error) {
+      console.error('Error loading packers:', error);
+      return packers;
+    }
+  }, []);
+  
+  // Filter packers for assignment dialog
+  const assignmentPackers = useMemo(() => {
+    return getAllPackers.filter((packer: any) => 
+      packer.sync_status !== 'offline' &&
+      (packer.name.toLowerCase().includes(packerSearchQuery.toLowerCase()) ||
+       packer.id.toLowerCase().includes(packerSearchQuery.toLowerCase()))
+    );
+  }, [getAllPackers, packerSearchQuery]);
+  
+  // Handle assign orders (multiple selected orders)
+  const handleAssignOrders = () => {
+    if (!selectedPacker || selectedOrders.size === 0) return;
+    
+    const packer = getAllPackers.find((p: any) => p.id === selectedPacker);
+    if (!packer) {
+      toast.error('Packer not found');
+      return;
+    }
+    
+    // Get only "Order Placed" orders that are not assigned
+    const ordersToAssign = Array.from(selectedOrders).filter(orderId => {
+      const order = orders?.find(o => o.id === orderId);
+      return order && order.status === 'Placed' && !order.assigned_packer_id;
+    });
+    
+    if (ordersToAssign.length === 0) {
+      toast.error('No valid orders to assign. Please select "Order Placed" orders that are not assigned.');
+      return;
+    }
+    
+    // Assign each order
+    ordersToAssign.forEach(orderId => {
+      updateOrder(orderId, {
+        assigned_packer_id: selectedPacker,
+        assigned_packer_name: packer.name,
+        packing_status: 'pending',
+        status: 'Placed' // Keep as "Placed" for manual assignment
+      });
+      
+      // Dispatch event to notify other components
+      window.dispatchEvent(new CustomEvent('orderStatusUpdated', {
+        detail: { 
+          orderId, 
+          status: 'Placed', 
+          packingStatus: 'pending',
+          packerName: packer.name
+        }
+      }));
+    });
+    
+    toast.success(`${ordersToAssign.length} order(s) assigned to ${packer.name}`);
+    setShowAssignDialog(false);
+    setSelectedPacker('');
+    setPackerSearchQuery('');
+    setSelectedOrders(new Set()); // Clear selection
+  };
 
   // Helper function to check date range
   const checkDateRange = (createdAt: string, range: string): boolean => {
@@ -236,22 +330,37 @@ const OrdersList = () => {
   };
 
   const handleSelectOrder = (orderId: string, checked: boolean) => {
-    const newSelected = new Set(selectedOrders);
-    if (checked) {
-      newSelected.add(orderId);
-    } else {
-      newSelected.delete(orderId);
+    // Only allow selection of "Order Placed" orders that are not assigned
+    const order = orders?.find(o => o.id === orderId);
+    if (order && order.status === 'Placed' && !order.assigned_packer_id) {
+      const newSelected = new Set(selectedOrders);
+      if (checked) {
+        newSelected.add(orderId);
+      } else {
+        newSelected.delete(orderId);
+      }
+      setSelectedOrders(newSelected);
+    } else if (checked) {
+      toast.error('Only "Order Placed" orders that are not assigned can be selected for assignment.');
     }
-    setSelectedOrders(newSelected);
   };
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
-      setSelectedOrders(new Set(filteredOrders.map(o => o.id)));
+      // Only select "Order Placed" orders that are not assigned
+      const selectableOrders = filteredOrders.filter(o => 
+        o.status === 'Placed' && !o.assigned_packer_id
+      );
+      setSelectedOrders(new Set(selectableOrders.map(o => o.id)));
     } else {
       setSelectedOrders(new Set());
     }
   };
+  
+  // Get selectable orders for checkbox state
+  const selectableOrders = useMemo(() => {
+    return filteredOrders.filter(o => o.status === 'Placed' && !o.assigned_packer_id);
+  }, [filteredOrders]);
 
   // Show loading state if orders are not loaded
   if (!orders) {
@@ -348,6 +457,126 @@ const OrdersList = () => {
               </DropdownMenuContent>
             </DropdownMenu>
           )}
+          {/* Assign Order button - Only show when auto-assign is OFF */}
+          {!autoAssign && (
+            <Dialog open={showAssignDialog} onOpenChange={setShowAssignDialog}>
+              <DialogTrigger asChild>
+                <Button
+                  variant="default"
+                  disabled={selectedOrders.size === 0}
+                  onClick={() => {
+                    if (selectedOrders.size > 0) {
+                      setShowAssignDialog(true);
+                    }
+                  }}
+                  className="gap-2"
+                >
+                  <UserPlus className="h-4 w-4" />
+                  Assign Order ({selectedOrders.size > 0 ? selectedOrders.size : ''})
+                </Button>
+              </DialogTrigger>
+                <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+                  <DialogHeader>
+                    <DialogTitle className="text-xl">Assign Orders to Packer</DialogTitle>
+                    <p className="text-sm text-muted-foreground">
+                      Select a packer to assign {selectedOrders.size} order(s)
+                    </p>
+                  </DialogHeader>
+                  
+                  <div className="space-y-4">
+                    {/* Search Bar */}
+                    <div className="relative">
+                      <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Search packers by name or ID..."
+                        value={packerSearchQuery}
+                        onChange={(e) => setPackerSearchQuery(e.target.value)}
+                        className="pl-10"
+                      />
+                    </div>
+
+                    {/* Packer List with ScrollArea */}
+                    <ScrollArea className="h-[400px] rounded-md border p-4">
+                      <div className="space-y-2">
+                        {assignmentPackers.length === 0 ? (
+                          <div className="text-center py-8 text-muted-foreground">
+                            No active packers available for assignment
+                          </div>
+                        ) : (
+                          assignmentPackers.map((packer: any) => (
+                            <div
+                              key={packer.id}
+                              className={`p-4 rounded-lg border cursor-pointer transition-all ${
+                                selectedPacker === packer.id
+                                  ? 'border-primary bg-primary/5'
+                                  : 'hover:bg-muted/50'
+                              }`}
+                              onClick={() => setSelectedPacker(packer.id)}
+                            >
+                              <div className="flex items-start justify-between">
+                                <div className="flex-1 space-y-2">
+                                  <div className="flex items-center gap-2">
+                                    <User className="h-4 w-4 text-muted-foreground" />
+                                    <span className="font-semibold">{packer.name}</span>
+                                    <Badge variant="outline" className="text-xs">
+                                      {packer.id}
+                                    </Badge>
+                                    <Badge className={
+                                      packer.sync_status === 'synced' 
+                                        ? 'bg-success/10 text-success border-success/20'
+                                        : packer.sync_status === 'active'
+                                        ? 'bg-warning/10 text-warning border-warning/20'
+                                        : 'bg-destructive/10 text-destructive border-destructive/20'
+                                    }>
+                                      {packer.sync_status === 'synced' ? '🟢' : packer.sync_status === 'active' ? '🟡' : '🔴'}
+                                    </Badge>
+                                  </div>
+                                  
+                                  <div className="flex items-center gap-4 text-sm">
+                                    <div className="flex items-center gap-1">
+                                      <Phone className="h-3 w-3 text-muted-foreground" />
+                                      <span className="text-muted-foreground">{packer.phone}</span>
+                                    </div>
+                                    {packer.zone && (
+                                      <Badge variant="secondary" className="text-xs">
+                                        {packer.zone}
+                                      </Badge>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {selectedPacker === packer.id && (
+                                  <div className="h-5 w-5 rounded-full bg-primary flex items-center justify-center text-white text-xs">
+                                    ✓
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </ScrollArea>
+                  </div>
+
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => {
+                      setShowAssignDialog(false);
+                      setSelectedPacker('');
+                      setPackerSearchQuery('');
+                    }}>
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={handleAssignOrders}
+                      disabled={!selectedPacker}
+                    >
+                      <UserPlus className="h-4 w-4 mr-2" />
+                      Assign {selectedOrders.size} Order(s)
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+          )}
           <Button 
             className="bg-primary hover:bg-primary/90"
             onClick={() => navigate('/order-management/add-order')}
@@ -357,6 +586,18 @@ const OrdersList = () => {
           </Button>
         </div>
       </div>
+      
+      {/* Manual Assignment Banner */}
+      {!autoAssign && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-center gap-3">
+          <AlertCircle className="h-5 w-5 text-blue-600" />
+          <div>
+            <p className="font-semibold text-blue-900">Manual Assignment Active</p>
+            <p className="text-sm text-blue-700">Select orders and assign to packers manually using the 'Assign Order' button.</p>
+          </div>
+        </div>
+      )}
+      
       {/* Performance Overview */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
         <Card>
@@ -406,7 +647,7 @@ const OrdersList = () => {
       <div className="mb-6 flex items-center gap-3">
         <Checkbox 
           id="select-all"
-          checked={selectedOrders.size === filteredOrders.length && filteredOrders.length > 0}
+          checked={selectableOrders.length > 0 && selectedOrders.size === selectableOrders.length}
           onCheckedChange={handleSelectAll}
         />
         <label htmlFor="select-all" className="text-sm font-medium text-foreground cursor-pointer">
@@ -593,6 +834,7 @@ const OrdersList = () => {
                     checked={selectedOrders.has(order.id)}
                     onCheckedChange={(checked) => handleSelectOrder(order.id, checked as boolean)}
                     onClick={(e) => e.stopPropagation()}
+                    disabled={order.status !== 'Placed' || !!order.assigned_packer_id}
                   />
                   <Link to={`/order-management/orders/${order.id}`} className="flex-1">
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-0">
@@ -673,7 +915,20 @@ const OrdersList = () => {
                           <div className="min-w-0 flex-1">
                             <p className="text-xs text-muted-foreground">Status</p>
                             <div className="mt-1">
-                              <StatusBadge status={order.status} />
+                              <StatusBadge status={
+                                // Status flow:
+                                // - "Placed" status → shows "Order Placed" tag (StatusBadge handles this)
+                                // - "Accepted" status → shows "Order In Process" tag (StatusBadge handles this)
+                                // - "Pending" status with packer assigned → shows "Order In Process" tag (treat as auto-assigned)
+                                // - "Packed" status → shows "Packed" tag
+                                
+                                // If status is "Pending" but order is assigned to a packer, show as "Order In Process"
+                                (order.status === 'Pending' && 
+                                 (order.assigned_packer_id || order.assigned_packer_name) &&
+                                 (order.packing_status === 'pending' || order.packing_status === 'assigned' || order.packing_status === 'in_process'))
+                                  ? 'Accepted' as OrderStatus  // This will show "Order In Process" via StatusBadge
+                                  : order.status
+                              } />
                             </div>
                           </div>
                         </div>

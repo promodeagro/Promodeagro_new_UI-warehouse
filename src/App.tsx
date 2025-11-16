@@ -33,6 +33,7 @@ import AddNewOrder from '@/components/order-management/AddNewOrder';
 import PackerOverview from '@/components/order-management/PackerOverview';
 import PackerDetails from '@/components/order-management/PackerDetails';
 import PackerOrders from '@/components/order-management/PackerOrders';
+import CreatePacker from '@/components/order-management/CreatePacker';
 
 // Import Pincode and Stock Adjustment components
 import { PincodeManagement } from '@/components/pincode/PincodeManagement';
@@ -78,13 +79,10 @@ import ReportDetail from '@/components/accounts/reports/ReportDetail';
 // Delivery components
 import RunsheetManagement from '@/components/delivery/RunsheetManagement';
 import RiderOverview from '@/components/delivery/RiderOverview';
-import CashCollectionManagement from '@/components/delivery/CashCollectionManagement';
 import RiderRunsheets from '@/components/delivery/RiderRunsheets';
 import RunsheetDetails from '@/components/delivery/RunsheetDetails';
 import CreateRunsheet from '@/components/delivery/CreateRunsheet';
 import DeliveryAction from '@/components/delivery/DeliveryAction';
-import CashVerificationDetails from '@/components/delivery/CashVerificationDetails';
-import CollectionDetailsView from '@/components/delivery/CollectionDetailsView';
 import CloseRunsheet from '@/components/delivery/CloseRunsheet';
 import ClosedRunsheetSummary from '@/components/delivery/ClosedRunsheetSummary';
 import RiderOnboardingQueue from '@/components/delivery/RiderOnboardingQueue';
@@ -142,6 +140,7 @@ function App() {
                   <Route path="/order-management/orders/:id" element={<OrderDetail />} />
                   <Route path="/order-management/add-order" element={<AddNewOrder />} />
                   <Route path="/order-management/packer-overview" element={<PackerOverview />} />
+                  <Route path="/order-management/create-packer" element={<CreatePacker />} />
                   <Route path="/order-management/packer-details/:packerId" element={<PackerDetails />} />
                   <Route path="/order-management/packer-orders/:packerId" element={<PackerOrders />} />
                   <Route path="/pincodes" element={<PincodeManagement />} />
@@ -156,9 +155,6 @@ function App() {
                   <Route path="/delivery/create-runsheet" element={<CreateRunsheet />} />
                   <Route path="/delivery/rider-onboarding-queue" element={<RiderOnboardingQueue />} />
                   <Route path="/delivery/rider-onboarding-queue/:riderId" element={<RiderApplicationDetails />} />
-                  <Route path="/delivery/cash-collection" element={<CashCollectionManagement />} />
-                  <Route path="/delivery/cash-verification/:id" element={<CashVerificationDetails />} />
-                  <Route path="/delivery/collection-details/:id" element={<CollectionDetailsView />} />
                   <Route path="/delivery/close-runsheet/:runsheetId" element={<CloseRunsheet />} />
                   <Route path="/delivery/rider/delivery/:id" element={<DeliveryAction />} />
                   {/* New route alias per requirement */}

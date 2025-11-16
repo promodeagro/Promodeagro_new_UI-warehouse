@@ -3,6 +3,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { useProducts } from "@/contexts/ProductContext";
 import { useOrders } from "@/contexts/OrderContext";
 import { useNotifications } from "@/contexts/NotificationContext";
+import { type OrderStatus, type OrderItem } from "@/data/orderData";
 import { ArrowLeft, Phone, MapPin, Clock, CreditCard, Package, User, Trash2, Plus, Printer, X, RotateCcw, Calendar, Search } from "lucide-react";
 import { Link, useParams, useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -10,10 +11,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useState, useMemo, useEffect } from "react";
 
 const OrderDetail = () => {
@@ -21,13 +22,42 @@ const OrderDetail = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
-  const { orders, updateOrderStatus } = useOrders();
+  const { orders, updateOrderStatus, updateOrder, addOrder } = useOrders();
   const [refreshKey, setRefreshKey] = useState(0);
   
+  // Auto-assign state from localStorage
+  const [autoAssign, setAutoAssign] = useState<boolean>(() => {
+    const saved = localStorage.getItem('packerAutoAssign');
+    return saved !== null ? saved === 'true' : true;
+  });
+  
+  
   // Get the current order - will update when orders change
+  // Try to find by id first, then by order_number (in case URL uses order_number)
   const order = useMemo(() => {
-    return orders?.find(o => o.id === id);
-  }, [orders, id, refreshKey]);
+    if (!orders || !id) {
+      console.log('OrderDetail: No orders or id', { orders: orders?.length, id });
+      return undefined;
+    }
+    try {
+      const found = orders.find(o => {
+        // Try matching by id
+        if (o.id === id) return true;
+        // Try matching by order_number
+        if (o.order_number === id) return true;
+        // Try matching order_number without dashes (in case URL has different format)
+        if (o.order_number?.replace(/-/g, '') === id.replace(/-/g, '')) return true;
+        return false;
+      });
+      if (!found) {
+        console.log('OrderDetail: Order not found', { id, orderNumbers: orders.map(o => o.order_number).slice(0, 5) });
+      }
+      return found;
+    } catch (error) {
+      console.error('Error finding order:', error);
+      return undefined;
+    }
+  }, [orders, id]);
   
   const { products, searchProducts: searchProductsContext } = useProducts();
 
@@ -79,57 +109,41 @@ const OrderDetail = () => {
     };
   }, [id]);
 
-  // Handle context-aware back navigation
-  const handleBackNavigation = () => {
-    const from = searchParams.get('from');
-    
-    if (from === 'packer-overview') {
-      // If came from packer overview, go back to packer overview
-      navigate('/order-management/packer-overview');
-    } else if (from === 'packer-orders') {
-      const packerId = searchParams.get('packerId');
-      if (packerId) {
-        navigate(`/order-management/packer-orders/${packerId}`);
-      } else {
-        navigate('/order-management/packer-overview');
-      }
-    } else {
-      // Default: go back to orders list
-      navigate('/order-management/orders');
-    }
-  };
-
-  // Add loading state while orders are being fetched
-  if (!orders || !order) {
-    return <div>Loading...</div>;
-  }
+  // ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
+  // This is a React requirement - hooks must be called in the same order every render
   
-  // State declarations that depend on order
-  const [orderItems, setOrderItems] = useState(order?.items || []);
-  const [removedItems, setRemovedItems] = useState<typeof order.items>([]);
+  // State declarations - use default values that work even if order is undefined
+  const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
+  const [removedItems, setRemovedItems] = useState<OrderItem[]>([]);
   const [showAddItemDialog, setShowAddItemDialog] = useState(false);
   const [selectedProducts, setSelectedProducts] = useState<{[key: string]: number}>({});
   const [showDiscountDialog, setShowDiscountDialog] = useState(false);
-  const [discountAmount, setDiscountAmount] = useState<number>(order?.discount || 0);
-  const [orderStatus, setOrderStatus] = useState(order?.status || 'Placed');
+  const [discountAmount, setDiscountAmount] = useState<number>(0);
+  const [orderStatus, setOrderStatus] = useState<OrderStatus>('Placed');
   const [showCancelDialog, setShowCancelDialog] = useState(false);
-  const [cancelReason, setCancelReason] = useState(order?.cancellation_reason || '');
+  const [cancelReason, setCancelReason] = useState('');
+  const [searchTerm, setSearchTerm] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [shippingCharges, setShippingCharges] = useState<number>(0);
+  const [showShippingDialog, setShowShippingDialog] = useState(false);
+  const [addShipping, setAddShipping] = useState<string>('0');
+  const [subtractShipping, setSubtractShipping] = useState<string>('0');
   
   // Auto-save functionality - no need for hasUnsavedChanges state
-  const { updateOrder } = useOrders();
   const { addNotification } = useNotifications();
   
   // Auto-open cancel dialog when navigated from cancellation processing
   useEffect(() => {
     const state = location.state as { openCancelDialog?: boolean } | null;
-    if (state?.openCancelDialog) {
+    if (state?.openCancelDialog && order) {
       setShowCancelDialog(true);
-      if (order?.cancellation_reason) {
+      if (order.cancellation_reason) {
         setCancelReason(order.cancellation_reason);
       }
       navigate(location.pathname + location.search, { replace: true });
     }
-  }, [location.state, location.pathname, location.search, order?.cancellation_reason, navigate]);
+  }, [location.state, location.pathname, location.search, order?.cancellation_reason, navigate, order]);
 
   // Keep cancellation reason in sync with order updates
   useEffect(() => {
@@ -144,12 +158,17 @@ const OrderDetail = () => {
       setOrderItems(order.items || []);
       setOrderStatus(order.status || 'Placed');
       setDiscountAmount(order.discount || 0);
+      setCancelReason(order.cancellation_reason || '');
+      setShippingCharges(order.shipping_charges || 0);
     }
-  }, [order?.id, order?.status, order?.items, order?.discount, refreshKey]);
+  }, [order?.id, order?.status, order?.items, order?.discount, order?.cancellation_reason, order?.shipping_charges]);
 
   // Auto-save function that updates the order in context
   const autoSaveOrder = () => {
     if (order) {
+      const subtotal = orderItems
+        .filter(item => !item.is_out_of_stock)
+        .reduce((sum, item) => sum + item.subtotal, 0);
       updateOrder(order.id, {
         items: orderItems,
         total_amount: subtotal + shippingCharges - discountAmount,
@@ -157,11 +176,6 @@ const OrderDetail = () => {
       });
     }
   };
-
-  // Search and filter states
-  const [searchTerm, setSearchTerm] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState("all");
 
   const handleRemoveItem = (itemId: string) => {
     const item = orderItems.find(i => i.id === itemId);
@@ -384,11 +398,54 @@ const OrderDetail = () => {
   const subtotal = orderItems
     .filter(item => !item.is_out_of_stock)
     .reduce((sum, item) => sum + item.subtotal, 0);
-  const [shippingCharges, setShippingCharges] = useState<number>(order?.shipping_charges || 0);
-  const [showShippingDialog, setShowShippingDialog] = useState(false);
-  const [addShipping, setAddShipping] = useState<string>('0');
-  const [subtractShipping, setSubtractShipping] = useState<string>('0');
   const totalAmount = subtotal + shippingCharges - discountAmount;
+  
+  // Handle context-aware back navigation
+  const handleBackNavigation = () => {
+    const from = searchParams.get('from');
+    
+    if (from === 'packer-overview') {
+      // If came from packer overview, go back to packer overview
+      navigate('/order-management/packer-overview');
+    } else if (from === 'packer-orders') {
+      const packerId = searchParams.get('packerId');
+      if (packerId) {
+        navigate(`/order-management/packer-orders/${packerId}`);
+      } else {
+        navigate('/order-management/packer-overview');
+      }
+    } else {
+      // Default: go back to orders list
+      navigate('/order-management/orders');
+    }
+  };
+
+  // Add loading state while orders are being fetched
+  if (!orders) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <p className="text-muted-foreground">Loading orders...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // If order not found, show error message
+  if (!order) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center space-y-4">
+          <h2 className="text-2xl font-bold text-foreground">Order Not Found</h2>
+          <p className="text-muted-foreground">Order with ID "{id}" could not be found.</p>
+          <Button onClick={handleBackNavigation} variant="outline">
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Go Back
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   const getPaymentStatus = (): 'Paid' | 'Pending' | 'Failed' => {
     if (order.payment_mode === 'Online') {
@@ -434,14 +491,14 @@ const OrderDetail = () => {
                 <ArrowLeft className="h-5 w-5" />
               </Button>
               <div>
-                <h1 className="text-2xl font-bold text-foreground">{order.order_number}</h1>
+                <h1 className="text-2xl font-bold text-foreground">{order?.order_number || id || 'Order'}</h1>
                 <p className="text-sm text-muted-foreground">Order Details</p>
               </div>
             </div>
             {/* Action buttons moved to header right */}
             <div className="flex items-center gap-5">
               {/* Show different buttons for Items No Stock orders */}
-              {order.packing_status === 'out_of_stock' ? (
+              {order?.packing_status === 'out_of_stock' ? (
                 <Button 
                   variant="outline" 
                   onClick={() => handleResumeOrder()}
@@ -1017,27 +1074,135 @@ const OrderDetail = () => {
                   Customer Details
                 </CardTitle>
                 <div className="ml-6 flex flex-col items-end">
-                  <StatusBadge status={order.status} />
-                  {/* Show packer name ONLY for packing statuses (not when On the way/Delivered/Undelivered) */}
-                  {order.assigned_packer_name && 
-                   (order.status === 'Packed' || order.packing_status === 'packed' || order.packing_status === 'assigned' || order.packing_status === 'pending') &&
-                   order.status !== 'On the way' && order.status !== 'Delivered' && order.status !== 'Undelivered' && (
-                    <span className="text-xs text-muted-foreground mt-1">
-                      {(order.status === 'Packed' || order.packing_status === 'packed') ? 'By' : 'To'} {order.assigned_packer_name}
-                    </span>
-                  )}
-                  {/* Show rider name ONLY for delivery statuses (On the way, Delivered, Undelivered) */}
-                  {(order.status === 'On the way' || order.status === 'Delivered' || order.status === 'Undelivered') && (order as any).assigned_rider_name && (
-                    <div className="flex flex-col items-end mt-1">
-                      <span className="text-xs text-muted-foreground whitespace-nowrap">
-                        {order.status === 'On the way'
-                          ? 'With'
-                          : order.status === 'Delivered'
-                          ? 'Delivered by'
-                          : 'By'} {(order as any).assigned_rider_name}
-                      </span>
-                    </div>
-                  )}
+                  {/* Determine display status based on order flow */}
+                  {(() => {
+                    let displayStatus: OrderStatus = order.status;
+                    
+                    // Don't override Failed, Returned, Cancelled, or delivery statuses
+                    if (order.status === 'Failed' || 
+                        order.status === 'Returned' || 
+                        order.status === 'Cancelled' ||
+                        order.status === 'On the way' ||
+                        order.status === 'Delivered' ||
+                        order.status === 'Undelivered' ||
+                        order.status === 'Items No Stock') {
+                      return <StatusBadge status={displayStatus} />;
+                    }
+                    
+                    // Status flow:
+                    // - "Placed" status → shows "Order Placed" tag (StatusBadge handles this)
+                    // - "Accepted" status → shows "Order In Process" tag (StatusBadge handles this)
+                    // - "Pending" status with packer assigned → shows "Order In Process" tag (treat as auto-assigned)
+                    // - "Packed" status → shows "Packed" tag
+                    
+                    // If status is "Pending" but order is assigned to a packer, show as "Order In Process"
+                    if (order.status === 'Pending' && 
+                        (order.assigned_packer_id || order.assigned_packer_name) &&
+                        (order.packing_status === 'pending' || order.packing_status === 'assigned' || order.packing_status === 'in_process')) {
+                      displayStatus = 'Accepted'; // This will show "Order In Process" via StatusBadge
+                    }
+                    
+                    return <StatusBadge status={displayStatus} />;
+                  })()}
+                  
+                  {/* Show appropriate text based on status and assignment */}
+                  {(() => {
+                    // Failed - prepaid order payment failed (bank issues, refund not received)
+                    if (order.status === 'Failed') {
+                      return (
+                        <span className="text-xs text-muted-foreground mt-1">
+                          Failed
+                        </span>
+                      );
+                    }
+                    
+                    // Items No Stock - show packer name with "To" prefix
+                    if (order.status === 'Items No Stock' || order.packing_status === 'out_of_stock') {
+                      return order.assigned_packer_name ? (
+                        <span className="text-xs text-muted-foreground mt-1">
+                          To {order.assigned_packer_name}
+                        </span>
+                      ) : null;
+                    }
+                    
+                    // Request for Cancellation (Returned status)
+                    if (order.status === 'Returned') {
+                      return (
+                        <span className="text-xs text-muted-foreground mt-1">
+                          Request for Cancellation
+                        </span>
+                      );
+                    }
+                    
+                    // Cancelled - show "Cancel order by User"
+                    if (order.status === 'Cancelled') {
+                      return (
+                        <span className="text-xs text-muted-foreground mt-1">
+                          Cancel order by User
+                        </span>
+                      );
+                    }
+                    
+                    // Delivery statuses - show rider name with "By" prefix
+                    if (order.status === 'On the way' || order.status === 'Delivered' || order.status === 'Undelivered') {
+                      if ((order as any).assigned_rider_name) {
+                        return (
+                          <span className="text-xs text-muted-foreground mt-1 whitespace-nowrap">
+                            By {(order as any).assigned_rider_name}
+                          </span>
+                        );
+                      }
+                      return null;
+                    }
+                    
+                    // Packing statuses - show packer name with "To" prefix
+                    if (order.assigned_packer_name && 
+                        order.status !== 'On the way' && 
+                        order.status !== 'Delivered' && 
+                        order.status !== 'Undelivered' &&
+                        order.status !== 'Failed' &&
+                        order.status !== 'Returned' &&
+                        order.status !== 'Cancelled') {
+                      // Order Placed + assigned → "To [packer]" (manual assignment while still Placed)
+                      if (order.status === 'Placed' && order.assigned_packer_name) {
+                        return (
+                          <span className="text-xs text-muted-foreground mt-1">
+                            To {order.assigned_packer_name}
+                          </span>
+                        );
+                      }
+                      
+                      // Order In Process (Accepted) + pending/assigned/in_process → "To [packer name]"
+                      // Also show for Accepted status even if packing_status is not set (to handle edge cases)
+                      if (order.status === 'Accepted' || 
+                          (order.status === 'Pending' && 
+                           (order.packing_status === 'pending' || order.packing_status === 'assigned' || order.packing_status === 'in_process'))) {
+                        return (
+                          <span className="text-xs text-muted-foreground mt-1">
+                            To {order.assigned_packer_name}
+                          </span>
+                        );
+                      }
+                      
+                      // Packed → "To [packer name]"
+                      if (order.status === 'Packed' || order.packing_status === 'packed') {
+                        return (
+                          <span className="text-xs text-muted-foreground mt-1">
+                            To {order.assigned_packer_name}
+                          </span>
+                        );
+                      }
+                      
+                      // Default for other packing statuses - use "To"
+                      return (
+                        <span className="text-xs text-muted-foreground mt-1">
+                          To {order.assigned_packer_name}
+                        </span>
+                      );
+                    }
+                    
+                    return null;
+                  })()}
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -1116,13 +1281,13 @@ const OrderDetail = () => {
                     <p className="font-medium text-foreground">{order.payment_mode === 'Online' ? 'Prepaid' : 'COD'}</p>
                   </div>
                 </div>
-                {order.packing_status && (
+                {order?.packing_status && (
                   <div className="flex items-center gap-3">
                     <Package className="h-5 w-5 text-muted-foreground" />
                     <div className="flex-1">
                       <p className="text-sm text-muted-foreground">Packing Status</p>
                       <Badge variant={getPackingStatusVariant(order.packing_status)}>
-                        {getPackingStatusIcon(order.packing_status)} {order.packing_status === 'out_of_stock' ? 'ITEMS NO STOCK' : order.packing_status.replace('_', ' ').toUpperCase()}
+                        {getPackingStatusIcon(order.packing_status)} {order.packing_status === 'out_of_stock' ? 'ITEMS NO STOCK' : (order.packing_status || '').replace('_', ' ').toUpperCase()}
                       </Badge>
                     </div>
                   </div>
