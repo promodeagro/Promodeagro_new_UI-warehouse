@@ -813,9 +813,9 @@ const CloseRunsheet = () => {
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <Badge variant={isClosed ? "default" : "secondary"} className="text-sm px-4 py-2">
+            <Badge variant={isClosed ? "default" : "secondary"} className="text-sm px-4 py-2">
                 {isClosed ? "Closed" : (runsheet.status || 'Created')}
-              </Badge>
+            </Badge>
                {/* Edit runsheet - navigates to CreateRunsheet with context to add orders */}
                <Link to={`/delivery/create-runsheet?edit=${runsheet.id}`} state={{ riderId: runsheet.rider_id, returnTo: location.pathname, orderIds: runsheet.orders_assigned }}>
                 <Button size="sm" variant="outline" className="h-8">
@@ -855,7 +855,7 @@ const CloseRunsheet = () => {
                   <p className="font-medium text-foreground">{runsheet.rider_name || rider?.name || 'N/A'}</p>
                   <p className="text-xs text-muted-foreground">{rider?.phone || 'N/A'}</p>
                 </div>
-                <div>
+                  <div>
                   <Label className="text-xs text-muted-foreground">Created Date & Time</Label>
                   <p className="text-sm font-medium text-foreground">
                     {runsheet.created_at 

@@ -1,4 +1,5 @@
 import React, { createContext, useState, useContext, ReactNode, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Bell, X, CheckCircle, AlertCircle, ShoppingCart } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -165,6 +166,7 @@ export const useNotifications = () => {
 export const NotificationBell = () => {
   const { unreadCount, notifications, markAsRead, removeNotification, clearAllNotifications } = useNotifications();
   const [isOpen, setIsOpen] = useState(false);
+  const navigate = useNavigate();
 
   const getNotificationIcon = (type: string) => {
     switch (type) {
@@ -248,10 +250,19 @@ export const NotificationBell = () => {
               notifications.map((notification) => (
                 <Card
                   key={notification.id}
-                  className={`m-2 cursor-pointer transition-colors ${
+                  className={`m-2 cursor-pointer transition-colors hover:bg-gray-100 ${
                     notification.read ? 'bg-gray-50' : 'bg-white'
                   }`}
-                  onClick={() => markAsRead(notification.id)}
+                  onClick={() => {
+                    // Mark as read
+                    markAsRead(notification.id);
+                    
+                    // Navigate to order detail if orderId exists
+                    if (notification.orderId) {
+                      setIsOpen(false); // Close the notification dropdown
+                      navigate(`/order-management/orders/${notification.orderId}`);
+                    }
+                  }}
                 >
                   <CardContent className="p-3">
                     <div className="flex items-start gap-3">

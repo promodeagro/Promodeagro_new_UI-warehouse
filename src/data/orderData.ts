@@ -1,6 +1,6 @@
 // Order Management Data Types and Dummy Data
 
-export type OrderStatus = 'Placed' | 'Accepted' | 'Packed' | 'On the way' | 'Delivered' | 'Undelivered' | 'Cancelled' | 'Returned' | 'Failed' | 'Out of Stock' | 'Items out of Stock' | 'Items No Stock';
+export type OrderStatus = 'Placed' | 'Accepted' | 'Pending' | 'Packed' | 'On the way' | 'Delivered' | 'Undelivered' | 'Cancelled' | 'Returned' | 'Failed' | 'Out of Stock' | 'Items out of Stock' | 'Items No Stock';
 export type PaymentMode = 'COD' | 'Online';
 
 export interface OrderItem {

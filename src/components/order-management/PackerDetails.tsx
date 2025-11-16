@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,6 +7,13 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { 
+  Select,
+  SelectTrigger,
+  SelectContent,
+  SelectItem,
+  SelectValue
+} from "@/components/ui/select";
 import { toast } from "sonner";
 import { 
   User, 
@@ -24,9 +31,14 @@ import {
   Eye,
   Download,
   Ban,
-  X
+  X,
+  CreditCard as IdCard,
+  Plus,
+  Trash2
 } from "lucide-react";
 import { packers } from "@/data/packerData";
+import PackerIdCard from "./PackerIdCard";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 
 export default function PackerDetails() {
   const { packerId } = useParams();
@@ -36,37 +48,62 @@ export default function PackerDetails() {
   const [isSuspended, setIsSuspended] = useState(false);
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [uploadedDocuments, setUploadedDocuments] = useState<Record<string, string>>({});
+  const [showIdCard, setShowIdCard] = useState(false);
+  
+  // Load roles from localStorage or use defaults
+  const [availableRoles, setAvailableRoles] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('packer-roles');
+      if (saved) {
+        return JSON.parse(saved);
+      }
+      return ['Manager', 'Packer Boy', 'Farm Boy'];
+    } catch (error) {
+      return ['Manager', 'Packer Boy', 'Farm Boy'];
+    }
+  });
+  const [newRoleInput, setNewRoleInput] = useState('');
+  const [showAddRole, setShowAddRole] = useState(false);
 
-  // Find the packer
-  const packer = packers.find(p => p.id === packerId);
-
-  if (!packer) {
-    return (
-      <div className="container mx-auto p-6">
-        <div className="text-center py-12">
-          <h2 className="text-2xl font-bold">Packer not found</h2>
-          <Button onClick={() => navigate('/order-management/packer-overview')} className="mt-4">
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Packer Overview
-          </Button>
-        </div>
-      </div>
-    );
-  }
+  // Find the packer - check both static packers and saved packers
+  const packer = useMemo(() => {
+    try {
+      const savedPackers = JSON.parse(localStorage.getItem('warehouse-packers') || '[]');
+      return packers.find(p => p.id === packerId) || savedPackers.find((p: any) => p.id === packerId);
+    } catch (error) {
+      console.error('Error loading packers:', error);
+      return packers.find(p => p.id === packerId);
+    }
+  }, [packerId]);
 
   // Initialize edited packer
-  if (!editedPacker) {
-    setEditedPacker(packer);
-  }
-
-  // Load sample documents for testing (remove this in production)
   useEffect(() => {
-    const sampleDocuments = {
-      'aadhar_front': 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMzAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iI2Y5ZjlmOSIvPjx0ZXh0IHg9IjE1MCIgeT0iMTAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiMzMzMiPkFhZGhhciBGcm9udDwvdGV4dD48L3N2Zz4=',
-      'pan': 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMzAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iI2Y5ZjlmOSIvPjx0ZXh0IHg9IjE1MCIgeT0iMTAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiMzMzMiPlBBTiBDYXJkPC90ZXh0Pjwvc3ZnPg=='
-    };
-    setUploadedDocuments(sampleDocuments);
-  }, []);
+    if (packer) {
+      setEditedPacker({ ...packer });
+    }
+  }, [packer]);
+
+  // Load profile image and documents from packer
+  useEffect(() => {
+    if (packer) {
+      // Load profile image if available
+      if ((packer as any).profile_image) {
+        setProfileImage((packer as any).profile_image);
+      }
+      
+      // Load documents if available
+      if ((packer as any).documents) {
+        setUploadedDocuments((packer as any).documents);
+      } else {
+        // Load sample documents for testing (remove this in production)
+        const sampleDocuments = {
+          'aadhar_front': 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMzAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iI2Y5ZjlmOSIvPjx0ZXh0IHg9IjE1MCIgeT0iMTAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiMzMzMiPkFhZGhhciBGcm9udDwvdGV4dD48L3N2Zz4=',
+          'pan': 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMzAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iI2Y5ZjlmOSIvPjx0ZXh0IHg9IjE1MCIgeT0iMTAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiMzMzMiPlBBTiBDYXJkPC90ZXh0Pjwvc3ZnPg=='
+        };
+        setUploadedDocuments(sampleDocuments);
+      }
+    }
+  }, [packer]);
 
   const handleSave = () => {
     // Save logic here - would sync with backend
@@ -75,7 +112,12 @@ export default function PackerDetails() {
     // Save to localStorage (ready for database integration)
     const savedPackers = JSON.parse(localStorage.getItem('warehouse-packers') || '[]');
     const updatedPackers = savedPackers.map((p: any) => 
-      p.id === packerId ? { ...p, ...editedPacker } : p
+      p.id === packerId ? { 
+        ...p, 
+        ...editedPacker,
+        profile_image: profileImage,
+        documents: uploadedDocuments
+      } : p
     );
     localStorage.setItem('warehouse-packers', JSON.stringify(updatedPackers));
     
@@ -84,18 +126,68 @@ export default function PackerDetails() {
   };
 
   const handleCancel = () => {
-    setEditedPacker(packer);
+    if (packer) {
+      setEditedPacker({ ...packer });
+    }
     setIsEditing(false);
   };
 
   const handleSuspendAccount = () => {
-    setIsSuspended(true);
-    toast.warning(`${packer.name} account suspended. No new orders will be assigned.`);
+    if (packer) {
+      setIsSuspended(true);
+      toast.warning(`${packer.name} account suspended. No new orders will be assigned.`);
+    }
   };
 
   const handleUnsuspendAccount = () => {
-    setIsSuspended(false);
-    toast.success(`${packer.name} account unsuspended. Normal functionality restored.`);
+    if (packer) {
+      setIsSuspended(false);
+      toast.success(`${packer.name} account unsuspended. Normal functionality restored.`);
+    }
+  };
+
+  const handleDeletePacker = () => {
+    if (!packer || !packerId) return;
+    
+    // Confirm deletion
+    if (window.confirm(`Are you sure you want to delete ${packer.name}? This action cannot be undone.`)) {
+      try {
+        // Check if packer is from static data or localStorage
+        const savedPackers = JSON.parse(localStorage.getItem('warehouse-packers') || '[]');
+        const isStaticPacker = packers.find(p => p.id === packerId);
+        const isSavedPacker = savedPackers.find((p: any) => p.id === packerId);
+        
+        if (isSavedPacker) {
+          // Remove from saved packers in localStorage
+          const updatedPackers = savedPackers.filter((p: any) => p.id !== packerId);
+          localStorage.setItem('warehouse-packers', JSON.stringify(updatedPackers));
+        }
+        
+        // For both static and saved packers, add to deleted packers list
+        // This ensures they won't show up in the packer overview
+        const deletedPackers = JSON.parse(localStorage.getItem('deleted-packers') || '[]');
+        if (!deletedPackers.includes(packerId)) {
+          deletedPackers.push(packerId);
+          localStorage.setItem('deleted-packers', JSON.stringify(deletedPackers));
+        }
+        
+        // Also remove from selected packers for auto-assign if present
+        const selectedPackers = JSON.parse(localStorage.getItem('selectedPackersForAutoAssign') || '[]');
+        const updatedSelectedPackers = selectedPackers.filter((id: string) => id !== packerId);
+        localStorage.setItem('selectedPackersForAutoAssign', JSON.stringify(updatedSelectedPackers));
+        
+        // Dispatch event to refresh packer list in PackerOverview
+        window.dispatchEvent(new CustomEvent('forcePackerRefresh'));
+        
+        toast.success(`${packer.name} has been deleted successfully.`);
+        
+        // Navigate back to packer overview
+        navigate('/order-management/packer-overview');
+      } catch (error) {
+        console.error('Error deleting packer:', error);
+        toast.error('Failed to delete packer. Please try again.');
+      }
+    }
   };
 
   const handleProfileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -108,6 +200,47 @@ export default function PackerDetails() {
         toast.success("Profile picture uploaded successfully!");
       };
       reader.readAsDataURL(file);
+    }
+  };
+
+  // Format Aadhar number (12 digits only, format as 1234-5678-9011)
+  const formatAadharNumber = (value: string) => {
+    // Remove all non-digits
+    const digits = value.replace(/\D/g, '');
+    // Limit to 12 digits
+    const limited = digits.slice(0, 12);
+    // Format as 1234-5678-9011
+    if (limited.length <= 4) {
+      return limited;
+    } else if (limited.length <= 8) {
+      return `${limited.slice(0, 4)}-${limited.slice(4)}`;
+    } else {
+      return `${limited.slice(0, 4)}-${limited.slice(4, 8)}-${limited.slice(8)}`;
+    }
+  };
+
+  const handleAadharChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const formatted = formatAadharNumber(e.target.value);
+    setEditedPacker({ ...editedPacker, aadhar_number: formatted });
+  };
+
+  // Add new role to the list
+  const handleAddNewRole = () => {
+    const trimmedRole = newRoleInput.trim();
+    if (trimmedRole && !availableRoles.includes(trimmedRole)) {
+      const updatedRoles = [...availableRoles, trimmedRole];
+      setAvailableRoles(updatedRoles);
+      localStorage.setItem('packer-roles', JSON.stringify(updatedRoles));
+      if (editedPacker) {
+        setEditedPacker({ ...editedPacker, role: trimmedRole });
+      }
+      setNewRoleInput('');
+      setShowAddRole(false);
+      toast.success(`Role "${trimmedRole}" added successfully!`);
+    } else if (trimmedRole && availableRoles.includes(trimmedRole)) {
+      toast.error('This role already exists');
+    } else {
+      toast.error('Please enter a role name');
     }
   };
 
@@ -139,6 +272,21 @@ export default function PackerDetails() {
       reader.readAsDataURL(file);
     }
   };
+
+  // Early return if packer not found
+  if (!packer) {
+    return (
+      <div className="container mx-auto p-6">
+        <div className="text-center py-12">
+          <h2 className="text-2xl font-bold">Packer not found</h2>
+          <Button onClick={() => navigate('/order-management/packer-overview')} className="mt-4">
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Packer Overview
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   const getSyncStatusColor = (status: string) => {
     switch (status) {
@@ -181,8 +329,8 @@ export default function PackerDetails() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Badge className={getSyncStatusColor(packer.sync_status)}>
-            {getSyncStatusIcon(packer.sync_status)} {packer.sync_status.toUpperCase()}
+          <Badge className={getSyncStatusColor(packer.sync_status || 'synced')}>
+            {getSyncStatusIcon(packer.sync_status || 'synced')} {(packer.sync_status || 'synced').toUpperCase()}
           </Badge>
           {isSuspended && (
             <Badge variant="destructive" className="bg-red-500 text-white">
@@ -201,10 +349,16 @@ export default function PackerDetails() {
               </Button>
             </div>
           ) : (
-            <Button onClick={() => setIsEditing(true)}>
-              <Edit className="h-4 w-4 mr-2" />
-              Edit
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setShowIdCard(true)}>
+                <IdCard className="h-4 w-4 mr-2" />
+                View ID Card
+              </Button>
+              <Button onClick={() => setIsEditing(true)}>
+                <Edit className="h-4 w-4 mr-2" />
+                Edit
+              </Button>
+            </div>
           )}
         </div>
       </div>
@@ -447,9 +601,11 @@ export default function PackerDetails() {
                   <Label htmlFor="aadhar">Aadhar Number</Label>
                   <Input
                     id="aadhar"
+                    type="text"
                     value={editedPacker?.aadhar_number || ''}
-                    onChange={(e) => setEditedPacker({ ...editedPacker, aadhar_number: e.target.value })}
-                    placeholder="XXXX-XXXX-XXXX"
+                    onChange={handleAadharChange}
+                    placeholder="1234-5678-9011"
+                    maxLength={14}
                     disabled={!isEditing}
                   />
                 </div>
@@ -466,14 +622,74 @@ export default function PackerDetails() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="role">Role of Person</Label>
-                  <Input
-                    id="role"
-                    value={editedPacker?.role || 'Warehouse Packer'}
-                    onChange={(e) => setEditedPacker({ ...editedPacker, role: e.target.value })}
-                    placeholder="Enter role"
-                    disabled={!isEditing}
-                  />
+                  <Label htmlFor="role">Role of Person <span className="text-red-500">*</span></Label>
+                  <div className="flex gap-2">
+                    <Select 
+                      value={editedPacker?.role || ''} 
+                      onValueChange={(value) => {
+                        if (value === 'add-new') {
+                          setShowAddRole(true);
+                        } else {
+                          setEditedPacker({ ...editedPacker, role: value });
+                        }
+                      }}
+                      disabled={!isEditing}
+                    >
+                      <SelectTrigger id="role" className="flex-1">
+                        <SelectValue placeholder="Select role" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableRoles.map((role) => (
+                          <SelectItem key={role} value={role}>
+                            {role}
+                          </SelectItem>
+                        ))}
+                        <SelectItem value="add-new" className="text-primary">
+                          <div className="flex items-center gap-2">
+                            <Plus className="h-4 w-4" />
+                            Add New Role
+                          </div>
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {showAddRole && isEditing && (
+                      <div className="flex gap-2 flex-1">
+                        <Input
+                          placeholder="Enter new role"
+                          value={newRoleInput}
+                          onChange={(e) => setNewRoleInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              handleAddNewRole();
+                            } else if (e.key === 'Escape') {
+                              setShowAddRole(false);
+                              setNewRoleInput('');
+                            }
+                          }}
+                          autoFocus
+                        />
+                        <Button
+                          type="button"
+                          size="icon"
+                          onClick={handleAddNewRole}
+                          variant="outline"
+                        >
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          type="button"
+                          size="icon"
+                          onClick={() => {
+                            setShowAddRole(false);
+                            setNewRoleInput('');
+                          }}
+                          variant="outline"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div className="space-y-2">
@@ -679,26 +895,34 @@ export default function PackerDetails() {
 
       </Tabs>
 
-      {/* Action Buttons */}
-      <div className="flex justify-end gap-4 mt-6 p-6 bg-gray-50 rounded-lg">
-        {!isEditing ? (
-          <Button onClick={() => setIsEditing(true)} className="flex items-center gap-2">
-            <Edit className="h-4 w-4" />
-            Edit Packer Details
-          </Button>
-        ) : (
-          <>
-            <Button variant="outline" onClick={handleCancel} className="flex items-center gap-2">
-              <X className="h-4 w-4" />
-              Cancel
-            </Button>
-            <Button onClick={handleSave} className="flex items-center gap-2">
-              <Save className="h-4 w-4" />
-              Save Changes
-            </Button>
-          </>
-        )}
+      {/* Delete Packer Button */}
+      <div className="flex justify-end mt-6 p-6 bg-gray-50 rounded-lg">
+        <Button 
+          variant="outline" 
+          onClick={handleDeletePacker}
+          className="flex items-center gap-2 border-red-500 text-red-600 hover:bg-red-50 hover:text-red-700"
+        >
+          <Trash2 className="h-4 w-4" />
+          Delete Packer
+        </Button>
       </div>
+
+      {/* ID Card Dialog */}
+      <Dialog open={showIdCard} onOpenChange={setShowIdCard}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <PackerIdCard 
+            packer={{
+              id: packer.id,
+              name: editedPacker?.name || packer.name,
+              date_of_birth: editedPacker?.date_of_birth || packer.date_of_birth,
+              role: editedPacker?.role || (packer as any).role || 'Warehouse Packer',
+              phone: editedPacker?.phone || packer.phone,
+              profile_image: profileImage || (packer as any).profile_image || null
+            }}
+            onClose={() => setShowIdCard(false)}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

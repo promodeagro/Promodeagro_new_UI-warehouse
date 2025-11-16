@@ -195,50 +195,106 @@ export const OrderProvider: React.FC<OrderProviderProps> = ({ children }) => {
       const now = new Date().toISOString();
       const orderNumber = `ORD-${Date.now()}`;
       
-      // Smart auto-assignment logic - assign to active packer with least pending orders
-      const activePackers = packers.filter(packer => packer.active);
+      // Check auto-assign toggle from localStorage
+      const savedAutoAssign = localStorage.getItem('packerAutoAssign');
+      const shouldAutoAssign = savedAutoAssign !== null ? savedAutoAssign === 'true' : true; // Default to true if not set
       
-      if (activePackers.length === 0) {
-        console.log('⚠️ No active packers available for auto-assignment');
-        // No auto-assignment if no active packers
-        const shouldAutoAssign = false;
-        const selectedPacker = null;
-        
+      // Get selected packers for auto-assignment from localStorage
+      let selectedPackerIds: Set<string> = new Set();
+      if (shouldAutoAssign) {
+        try {
+          const saved = localStorage.getItem('selectedPackersForAutoAssign');
+          if (saved) {
+            selectedPackerIds = new Set(JSON.parse(saved));
+          }
+        } catch (error) {
+          console.error('Error loading selected packers:', error);
+        }
+      }
+      
+      // Get all packers (static + saved from localStorage)
+      let allPackersList: any[] = [];
+      try {
+        const savedPackers = JSON.parse(localStorage.getItem('warehouse-packers') || '[]');
+        const savedIds = new Set(savedPackers.map((p: any) => p.id));
+        const staticPackers = packers.filter(p => !savedIds.has(p.id));
+        allPackersList = [...savedPackers, ...staticPackers];
+      } catch (error) {
+        console.error('Error loading packers:', error);
+        allPackersList = packers;
+      }
+      
+      // Filter to active packers, and if auto-assign is ON, only use selected packers
+      let eligiblePackers = allPackersList.filter(packer => packer.active);
+      if (shouldAutoAssign && selectedPackerIds.size > 0) {
+        // Only use selected packers for auto-assignment
+        eligiblePackers = eligiblePackers.filter((p: any) => selectedPackerIds.has(p.id));
+      }
+      
+      // Sort eligible packers by ID for consistent ordering in round-robin
+      eligiblePackers.sort((a: any, b: any) => (a.id || '').localeCompare(b.id || ''));
+      
+      if (eligiblePackers.length === 0) {
+        console.log('⚠️ No eligible packers available for auto-assignment');
+        // No auto-assignment if no eligible packers
         const enrichedOrderData = {
           ...orderData,
-          id: orderId,
-          order_number: orderNumber,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          packing_status: 'pending', // No auto-assignment
-          assigned_packer_id: undefined,
-          assigned_packer_name: undefined,
-          status: 'Placed', // Stay as Placed
+          pincode: orderData.pincode || (orderData.address ? orderData.address.split(',').pop()?.trim() : 'N/A'),
+          zone: orderData.zone || 'Zone A',
+          lat: orderData.lat || 28.4595,
+          lng: orderData.lng || 77.0266,
         };
         
-        const newOrder = enrichedOrderData as Order;
-        setOrders(prev => [...prev, newOrder]);
-        localStorage.setItem('warehouse-orders', JSON.stringify([...orders, newOrder]));
+        const newOrder: Order = {
+          ...enrichedOrderData,
+          id: `ORD${Date.now()}`,
+          order_number: orderNumber,
+          created_at: now,
+          updated_at: now,
+          packing_status: 'pending',
+          assigned_packer_id: undefined,
+          assigned_packer_name: undefined,
+          status: 'Placed',
+        };
         
-        console.log('Created new order without auto-assignment (no active packers):', newOrder);
+        setOrders(prev => {
+          const newOrders = [newOrder, ...prev];
+          const uniqueOrders = removeDuplicates(newOrders);
+          const savedOrders = uniqueOrders.filter(order => !dummyOrders.some(dummy => dummy.id === order.id));
+          localStorage.setItem('warehouse-orders', JSON.stringify(savedOrders));
+          return uniqueOrders;
+        });
+        
+        console.log('Created new order without auto-assignment (no eligible packers):', newOrder);
         return newOrder;
       }
       
-      // Count pending orders for each active packer
-      const packerWorkloads = activePackers.map(packer => {
-        const pendingCount = orders.filter(order => 
-          order.assigned_packer_id === packer.id && 
-          (order.packing_status === 'pending' || order.packing_status === 'assigned')
-        ).length;
-        return { ...packer, pendingCount };
-      });
+      // Round-robin distribution: Get the last assigned packer ID from localStorage
+      let lastPackerId = '';
+      try {
+        const savedId = localStorage.getItem('lastPackerId');
+        if (savedId !== null) {
+          lastPackerId = savedId;
+        }
+      } catch (error) {
+        console.error('Error loading last packer ID:', error);
+      }
       
-      // Sort by pending count (ascending) and select packer with least workload
-      const sortedPackers = packerWorkloads.sort((a, b) => a.pendingCount - b.pendingCount);
-      const selectedPacker = sortedPackers[0];
+      // Find the index of the last assigned packer, or start from 0
+      let lastPackerIndex = 0;
+      if (lastPackerId) {
+        const foundIndex = eligiblePackers.findIndex((p: any) => p.id === lastPackerId);
+        if (foundIndex >= 0) {
+          lastPackerIndex = foundIndex;
+        }
+      }
       
-      // Always auto-assign for better workflow (can be made configurable later)
-      const shouldAutoAssign = true; // 100% auto-assignment for now
+      // Get next packer in round-robin fashion
+      const nextPackerIndex = (lastPackerIndex + 1) % eligiblePackers.length;
+      const selectedPacker = eligiblePackers[nextPackerIndex];
+      
+      // Save the next packer ID for round-robin
+      localStorage.setItem('lastPackerId', selectedPacker.id);
       
       // Ensure all required fields are present
       const enrichedOrderData = {

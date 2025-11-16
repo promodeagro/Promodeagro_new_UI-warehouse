@@ -64,7 +64,11 @@ export default function PackerOverview() {
   const [activePackerId, setActivePackerId] = useState<string>(packers[0]?.id || '');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<FilterTab>('all');
-  const [autoAssign, setAutoAssign] = useState<boolean>(true);
+  // Initialize autoAssign from localStorage, default to true
+  const [autoAssign, setAutoAssign] = useState<boolean>(() => {
+    const saved = localStorage.getItem('packerAutoAssign');
+    return saved !== null ? saved === 'true' : true;
+  });
   const [showNotification, setShowNotification] = useState<boolean>(false);
   const [zoneFilter, setZoneFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -79,9 +83,21 @@ export default function PackerOverview() {
   // Packer state management
   const [packerStates, setPackerStates] = useState<Record<string, boolean>>(() => {
     const initialState: Record<string, boolean> = {};
+    // Initialize from static packers
     packers.forEach(packer => {
       initialState[packer.id] = packer.active;
     });
+    // Also initialize from saved packers
+    try {
+      const savedPackers = JSON.parse(localStorage.getItem('warehouse-packers') || '[]');
+      savedPackers.forEach((packer: any) => {
+        if (packer.id && typeof packer.active === 'boolean') {
+          initialState[packer.id] = packer.active;
+        }
+      });
+    } catch (error) {
+      console.error('Error loading packer states:', error);
+    }
     return initialState;
   });
   
@@ -105,8 +121,44 @@ export default function PackerOverview() {
   // Manual status change states
   const [showStatusChangeDialog, setShowStatusChangeDialog] = useState<boolean>(false);
   const [newPackingStatus, setNewPackingStatus] = useState<string>('');
+  
+  // Auto-assign packer selection dialog states
+  const [showPackerSelectionDialog, setShowPackerSelectionDialog] = useState<boolean>(false);
+  const [selectedPackersForAutoAssign, setSelectedPackersForAutoAssign] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem('selectedPackersForAutoAssign');
+      if (saved) {
+        return new Set(JSON.parse(saved));
+      }
+      // Default: select all active packers
+      return new Set();
+    } catch (error) {
+      return new Set();
+    }
+  });
+  const [pendingAutoAssignToggle, setPendingAutoAssignToggle] = useState<boolean>(false);
 
-  const activePacker = useMemo(() => packers.find(p => p.id === activePackerId) || packers[0], [activePackerId]);
+  // Get packers from localStorage (for newly created ones) and merge with static packers
+  const allPackers = useMemo(() => {
+    try {
+      const savedPackers = JSON.parse(localStorage.getItem('warehouse-packers') || '[]');
+      // Get list of deleted packers to exclude them
+      const deletedPackers = JSON.parse(localStorage.getItem('deleted-packers') || '[]');
+      const deletedIds = new Set(deletedPackers);
+      
+      // Merge saved packers with static packers, prioritizing saved ones
+      const savedIds = new Set(savedPackers.map((p: any) => p.id));
+      const staticPackers = packers.filter(p => !savedIds.has(p.id) && !deletedIds.has(p.id));
+      const filteredSavedPackers = savedPackers.filter((p: any) => !deletedIds.has(p.id));
+      
+      return [...filteredSavedPackers, ...staticPackers];
+    } catch (error) {
+      console.error('Error loading packers:', error);
+      return packers;
+    }
+  }, [refreshKey]);
+
+  const activePacker = useMemo(() => allPackers.find((p: any) => p.id === activePackerId) || allPackers[0], [activePackerId, allPackers]);
 
   // Reset packer filter when search query changes
   useEffect(() => {
@@ -114,6 +166,11 @@ export default function PackerOverview() {
       setPackerFilter('all');
     }
   }, [searchQuery]);
+
+  // Reset packer card pagination when packer search filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [packerSearchQuery, packerActiveFilter]);
 
   // Sound alert function for Items No Stock
   const playOutOfStockAlert = () => {
@@ -365,47 +422,46 @@ export default function PackerOverview() {
     }
   ];
 
+  // Use orders directly from context - React will detect when orders array changes
   const enrichedOrders = useMemo(() => {
-    // Use real orders from OrderContext, but add packing status if missing
-    const base = orders || [];
-    
-    return base.map(order => {
-      if (order.status === 'Cancelled' || order.status === 'Returned' || order.status === 'Failed' || order.packing_status === 'cancelled') {
+    return orders.map((order) => {
+      // ALWAYS create a new object - this is critical for React to detect changes
+      const enriched = { ...order };
+      
+      if (enriched.status === 'Cancelled' || enriched.status === 'Returned' || enriched.status === 'Failed' || enriched.packing_status === 'cancelled') {
         return {
-          ...order,
+          ...enriched,
           packing_status: 'cancelled',
           assigned_packer_id: undefined,
           assigned_packer_name: undefined
         };
       }
 
-      // If order already has packing status, use it; otherwise assign default pending
-      if (order.packing_status) {
-        // Safeguard: If order has packer ID but no name, try to resolve it
-        if (order.assigned_packer_id && !order.assigned_packer_name) {
-          const packer = packers.find(p => p.id === order.assigned_packer_id);
-          if (packer) {
-            // Update the order with the resolved packer name
-            updateOrder(order.id, { assigned_packer_name: packer.name });
-            return { ...order, assigned_packer_name: packer.name };
-          }
-        }
-        return order;
+      if (!enriched.packing_status) {
+        return {
+          ...enriched,
+          packing_status: 'pending',
+          assigned_packer_id: undefined,
+          assigned_packer_name: undefined
+        };
       }
-      
-      // For orders without packing status, set as pending and unassigned
-      return {
-        ...order,
-        packing_status: 'pending',
-        assigned_packer_id: undefined,
-        assigned_packer_name: undefined,
-      } as any;
+
+      if (enriched.assigned_packer_id && !enriched.assigned_packer_name) {
+        const packer = packers.find(p => p.id === enriched.assigned_packer_id);
+        if (packer) {
+          updateOrder(enriched.id, { assigned_packer_name: packer.name });
+          return { ...enriched, assigned_packer_name: packer.name };
+        }
+      }
+
+      // CRITICAL: Always return a new object, even if nothing changed
+      return { ...enriched };
     });
-  }, [orders, packers, updateOrder, refreshKey]);
+  }, [orders, packers, updateOrder]);
 
   // Calculate packer workloads for smart assignment
   const packerWorkloads = useMemo(() => {
-    const workloads = packers.map(packer => {
+    const workloads = allPackers.map((packer: any) => {
       // Use the state management for active status
       const isActive = packerStates[packer.id] !== undefined ? packerStates[packer.id] : packer.active;
       
@@ -445,19 +501,39 @@ export default function PackerOverview() {
       };
     });
     
-    return workloads;
-  }, [enrichedOrders, packers, packerStates]);
+      return workloads;
+  }, [enrichedOrders, allPackers, packerStates]);
+
+  // Map packers that have orders matching the current search query (order id/customer name)
+  const packerMatchesOrderSearch = useMemo(() => {
+    if (!packerSearchQuery) return {};
+    const query = packerSearchQuery.toLowerCase();
+    const matches: Record<string, boolean> = {};
+    
+    enrichedOrders.forEach(order => {
+      if (!order.assigned_packer_id) return;
+      const orderIdMatch = order.order_number?.toLowerCase().includes(query);
+      const customerMatch = order.customer_name?.toLowerCase().includes(query);
+      if (orderIdMatch || customerMatch) {
+        matches[order.assigned_packer_id] = true;
+      }
+    });
+    
+    return matches;
+  }, [packerSearchQuery, enrichedOrders]);
 
   // Filter packers based on search query and active/inactive status
   const filteredPackers = useMemo(() => {
     let filtered = packerWorkloads;
+    const query = packerSearchQuery.toLowerCase();
     
-    // Filter by search query
+    // Filter by search query (name/id/zone or order/customer match)
     if (packerSearchQuery) {
       filtered = filtered.filter(packer => 
-        packer.name.toLowerCase().includes(packerSearchQuery.toLowerCase()) ||
-        packer.id.toLowerCase().includes(packerSearchQuery.toLowerCase()) ||
-        packer.zone?.toLowerCase().includes(packerSearchQuery.toLowerCase())
+        packer.name.toLowerCase().includes(query) ||
+        packer.id.toLowerCase().includes(query) ||
+        packer.zone?.toLowerCase().includes(query) ||
+        packerMatchesOrderSearch[packer.id]
       );
     }
     
@@ -474,14 +550,14 @@ export default function PackerOverview() {
 
   // Filter packers for assignment dialog (only active packers)
   const assignmentPackers = useMemo(() => {
-    if (!packerSearchQuery) return packerWorkloads.filter(p => p.active);
-    return packerWorkloads.filter(packer => 
+    if (!packerSearchQuery) return packerWorkloads.filter((p: any) => p.active);
+    return packerWorkloads.filter((packer: any) => 
       packer.active && (
         packer.name.toLowerCase().includes(packerSearchQuery.toLowerCase()) ||
         packer.id.toLowerCase().includes(packerSearchQuery.toLowerCase()) ||
         packer.zone?.toLowerCase().includes(packerSearchQuery.toLowerCase())
       )
-    ).sort((a, b) => a.totalWorkload - b.totalWorkload); // Sort by workload (least first)
+    ).sort((a: any, b: any) => a.totalWorkload - b.totalWorkload); // Sort by workload (least first)
   }, [packerWorkloads, packerSearchQuery]);
 
   const packerOrders = useMemo(() => enrichedOrders.filter(o => o.assigned_packer_id === activePacker?.id), [enrichedOrders, activePacker?.id]);
@@ -492,15 +568,18 @@ export default function PackerOverview() {
     
     const pendingOrders = packerOrders.filter(o => o.packing_status === 'pending').length;
     const outOfStockOrders = packerOrders.filter(o => o.packing_status === 'out_of_stock').length;
+    const assignedOrders = packerOrders.filter(o => 
+      o.packing_status === 'assigned' || o.packing_status === 'in_process'
+    ).length;
     
     return {
       all: packerOrders.length,
-      assigned: packerOrders.filter(o => o.packing_status === 'assigned').length,
+      assigned: assignedOrders,
       pending: pendingOrders + outOfStockOrders, // Include Items No Stock in pending count
       packed: packerOrders.filter(o => o.packing_status === 'packed').length,
       "items-Out-of-stock": outOfStockOrders,
     };
-  }, [enrichedOrders]);
+  }, [enrichedOrders, refreshKey]);
 
   const filteredOrders = useMemo(() => {
     return enrichedOrders.filter(order => {
@@ -516,11 +595,16 @@ export default function PackerOverview() {
       let matchesFilter = true;
       if (activeTab === 'all') {
         // Show all orders from the main statuses including cancelled
-        matchesFilter = ['assigned', 'pending', 'packed', 'out_of_stock', 'cancelled'].includes(order.packing_status);
-      } else if (activeTab === 'assigned') matchesFilter = order.packing_status === 'assigned';
-      else if (activeTab === 'pending') matchesFilter = order.packing_status === 'pending' || order.packing_status === 'out_of_stock';
-      else if (activeTab === 'packed') matchesFilter = order.packing_status === 'packed';
-      else if (activeTab === 'items-Out-of-stock') matchesFilter = order.packing_status === 'out_of_stock';
+        matchesFilter = ['assigned', 'pending', 'packed', 'out_of_stock', 'cancelled', 'in_process'].includes(order.packing_status);
+      } else if (activeTab === 'assigned') {
+        matchesFilter = order.packing_status === 'assigned' || order.packing_status === 'in_process';
+      } else if (activeTab === 'pending') {
+        matchesFilter = order.packing_status === 'pending' || order.packing_status === 'out_of_stock';
+      } else if (activeTab === 'packed') {
+        matchesFilter = order.packing_status === 'packed';
+      } else if (activeTab === 'items-Out-of-stock') {
+        matchesFilter = order.packing_status === 'out_of_stock';
+      }
 
       const matchesPincode = zoneFilter === 'all' || order.pincode === zoneFilter;
       const matchesStatus = statusFilter === 'all' || order.packing_status === statusFilter;
@@ -528,7 +612,7 @@ export default function PackerOverview() {
 
       return matchesSearch && matchesFilter && matchesPincode && matchesStatus && matchesPacker;
     });
-  }, [packerOrders, activeTab, searchQuery, zoneFilter, statusFilter, packerFilter]);
+  }, [enrichedOrders, activeTab, searchQuery, zoneFilter, statusFilter, packerFilter, refreshKey]);
 
   // Pagination for orders table
   const totalOrdersPages = Math.ceil(filteredOrders.length / ordersPerPage);
@@ -537,10 +621,14 @@ export default function PackerOverview() {
   const paginatedOrders = filteredOrders.slice(ordersStartIndex, ordersEndIndex);
 
   // Pagination logic for packer cards
-  const totalPages = Math.ceil(filteredPackers.length / cardsPerPage);
+  const totalPages = Math.max(1, Math.ceil(filteredPackers.length / cardsPerPage));
   const startIndex = (currentPage - 1) * cardsPerPage;
   const endIndex = startIndex + cardsPerPage;
   const paginatedPackers = filteredPackers.slice(startIndex, endIndex);
+
+  useEffect(() => {
+    setCurrentPage(prev => Math.min(prev, totalPages));
+  }, [totalPages]);
 
   const getStatusColor = (status?: string) => {
     switch (status) {
@@ -573,30 +661,144 @@ export default function PackerOverview() {
 
   // Handle auto assign toggle change
   const handleAutoAssignChange = (checked: boolean) => {
-    setAutoAssign(checked);
-    setShowNotification(true);
-    
     if (checked) {
-      toast.success("Auto-assignment enabled", {
-        duration: 3000,
-      });
+      // When turning ON, open the packer selection dialog
+      setPendingAutoAssignToggle(true);
+      setShowPackerSelectionDialog(true);
     } else {
+      // When turning OFF, immediately disable
+      setAutoAssign(false);
+      localStorage.setItem('packerAutoAssign', 'false');
+      window.dispatchEvent(new CustomEvent('packerAutoAssignChanged', { detail: { autoAssign: false } }));
+      setShowNotification(true);
       toast.info("Manual assignment mode", {
         duration: 3000,
       });
+      setTimeout(() => {
+        setShowNotification(false);
+      }, 3000);
+    }
+  };
+  
+  // Handle packer selection for auto-assign
+  const handleConfirmPackerSelection = () => {
+    if (selectedPackersForAutoAssign.size === 0) {
+      toast.error('Please select at least one packer for auto-assignment');
+      return;
     }
     
-    // Hide notification after 3 seconds
+    // Save selected packers to localStorage
+    localStorage.setItem('selectedPackersForAutoAssign', JSON.stringify(Array.from(selectedPackersForAutoAssign)));
+    
+    // Enable auto-assign
+    setAutoAssign(true);
+    localStorage.setItem('packerAutoAssign', 'true');
+    window.dispatchEvent(new CustomEvent('packerAutoAssignChanged', { detail: { autoAssign: true } }));
+    
+    setShowPackerSelectionDialog(false);
+    setPendingAutoAssignToggle(false);
+    setShowNotification(true);
+    
+    toast.success(`Auto-assignment enabled for ${selectedPackersForAutoAssign.size} packer(s)`, {
+      duration: 3000,
+    });
+    
     setTimeout(() => {
       setShowNotification(false);
     }, 3000);
   };
+  
+  // Handle cancel packer selection
+  const handleCancelPackerSelection = () => {
+    setShowPackerSelectionDialog(false);
+    setPendingAutoAssignToggle(false);
+    // Reset selected packers to saved state
+    try {
+      const saved = localStorage.getItem('selectedPackersForAutoAssign');
+      if (saved) {
+        setSelectedPackersForAutoAssign(new Set(JSON.parse(saved)));
+      } else {
+        setSelectedPackersForAutoAssign(new Set());
+      }
+    } catch (error) {
+      setSelectedPackersForAutoAssign(new Set());
+    }
+  };
+  
+  // Load selected packers when dialog opens and filter out deleted packers
+  useEffect(() => {
+    if (showPackerSelectionDialog) {
+      try {
+        // Get deleted packers list
+        const deletedPackers = JSON.parse(localStorage.getItem('deleted-packers') || '[]');
+        const deletedIds = new Set(deletedPackers);
+        
+        const saved = localStorage.getItem('selectedPackersForAutoAssign');
+        if (saved) {
+          const savedSelected = JSON.parse(saved);
+          // Filter out deleted packers from selection
+          const filteredSelected = savedSelected.filter((id: string) => !deletedIds.has(id));
+          setSelectedPackersForAutoAssign(new Set(filteredSelected));
+          
+          // Update localStorage if any deleted packers were removed
+          if (filteredSelected.length !== savedSelected.length) {
+            localStorage.setItem('selectedPackersForAutoAssign', JSON.stringify(filteredSelected));
+          }
+        } else {
+          // If no saved selection and auto-assign is being turned on, select all active packers by default
+          if (pendingAutoAssignToggle) {
+            const activePackers = allPackers.filter((p: any) => p.active !== false && p.sync_status !== 'offline');
+            setSelectedPackersForAutoAssign(new Set(activePackers.map((p: any) => p.id)));
+          }
+        }
+      } catch (error) {
+        console.error('Error loading selected packers:', error);
+      }
+    }
+  }, [showPackerSelectionDialog, pendingAutoAssignToggle, allPackers, refreshKey]);
+  
+  // Handle select/deselect individual packer
+  const handleTogglePackerForAutoAssign = (packerId: string, checked: boolean) => {
+    const newSelected = new Set(selectedPackersForAutoAssign);
+    if (checked) {
+      newSelected.add(packerId);
+    } else {
+      newSelected.delete(packerId);
+    }
+    setSelectedPackersForAutoAssign(newSelected);
+  };
+  
+  // Handle select all packers
+  const handleSelectAllPackers = (checked: boolean) => {
+    if (checked) {
+      // Select all active packers only (exclude inactive)
+      const activePackers = allPackers.filter((p: any) => p.active !== false && p.sync_status !== 'offline');
+      setSelectedPackersForAutoAssign(new Set(activePackers.map((p: any) => p.id)));
+    } else {
+      setSelectedPackersForAutoAssign(new Set());
+    }
+  };
+  
+  // Get active packers count for select all checkbox
+  const activePackersCount = useMemo(() => {
+    return allPackers.filter((p: any) => p.active !== false && p.sync_status !== 'offline').length;
+  }, [allPackers]);
 
   // Update packer last active time (for mobile sync simulation)
   const updatePackerLastActive = (packerId: string) => {
-    const packer = packers.find(p => p.id === packerId);
+    const packer = allPackers.find((p: any) => p.id === packerId);
     if (packer) {
       packer.last_active = new Date().toISOString();
+      // Save to localStorage if it's a saved packer
+      try {
+        const savedPackers = JSON.parse(localStorage.getItem('warehouse-packers') || '[]');
+        const updatedPackers = savedPackers.map((p: any) => 
+          p.id === packerId ? { ...p, last_active: packer.last_active } : p
+        );
+        localStorage.setItem('warehouse-packers', JSON.stringify(updatedPackers));
+      } catch (error) {
+        console.error('Error updating packer last active:', error);
+      }
       // Force re-render by updating a dummy state
       setCurrentPage(prev => prev);
     }
@@ -604,8 +806,8 @@ export default function PackerOverview() {
 
   // Handle individual packer active/inactive toggle
   const handlePackerToggleChange = (packerId: string, checked: boolean) => {
-    // Find the packer in the packers array
-    const packer = packers.find(p => p.id === packerId);
+    // Find the packer in the allPackers array
+    const packer = allPackers.find((p: any) => p.id === packerId);
     if (packer) {
       // Update the packer state
       setPackerStates(prev => ({
@@ -647,7 +849,7 @@ export default function PackerOverview() {
   useEffect(() => {
     const mobileSyncInterval = setInterval(() => {
       // Randomly update some active packers' last active time to simulate mobile activity
-      const activePackers = packers.filter(p => p.active && packerStates[p.id] !== false);
+      const activePackers = allPackers.filter((p: any) => p.active && packerStates[p.id] !== false);
       if (activePackers.length > 0 && Math.random() > 0.7) { // 30% chance every 30 seconds
         const randomPacker = activePackers[Math.floor(Math.random() * activePackers.length)];
         updatePackerLastActive(randomPacker.id);
@@ -655,7 +857,7 @@ export default function PackerOverview() {
     }, 30000); // Check every 30 seconds
 
     return () => clearInterval(mobileSyncInterval);
-  }, [packers, packerStates]);
+  }, [allPackers, packerStates]);
 
   // Reset pagination when filters change
   useEffect(() => {
@@ -669,8 +871,8 @@ export default function PackerOverview() {
       const isNewOrder = new Date(latestOrder.created_at).getTime() > Date.now() - 5000; // Within last 5 seconds
       
       if (isNewOrder && latestOrder.packing_status === 'pending') {
-        // Check if any packers are active before auto-assigning
-        const activePackers = packers.filter(p => p.active);
+      // Check if any packers are active before auto-assigning
+      const activePackers = allPackers.filter((p: any) => p.active);
         if (activePackers.length === 0) {
           toast.warning(`New order ${latestOrder.order_number} received but no active packers available for assignment!`);
         } else {
@@ -709,8 +911,48 @@ export default function PackerOverview() {
   
   // Listen for order status updates and refresh the UI
   useEffect(() => {
+    let lastSignature = '';
+    
+    const checkForUpdates = () => {
+      try {
+        const storedOrders = localStorage.getItem('warehouse-orders');
+        if (storedOrders) {
+          // Check if orders have changed by comparing a signature
+          const parsedOrders = JSON.parse(storedOrders);
+          const statusSignature = parsedOrders
+            .map((o: any) => `${o.id}:${o.packing_status}:${o.status}:${o.updated_at || ''}`)
+            .join('|');
+          
+          if (lastSignature !== statusSignature) {
+            // Status changed in localStorage, force refresh
+            console.log('📊 Status signature changed in localStorage, forcing refresh');
+            console.log(`   Previous: ${lastSignature.substring(0, 100)}...`);
+            console.log(`   Current:  ${statusSignature.substring(0, 100)}...`);
+            setRefreshKey(prev => prev + 1);
+            lastSignature = statusSignature;
+          }
+        }
+      } catch (error) {
+        console.error('Error checking localStorage:', error);
+      }
+    };
+    
     const handleOrderUpdate = () => {
+      // Multiple refreshes to ensure UI updates after context state changes
       setRefreshKey(prev => prev + 1);
+      setTimeout(() => {
+        setRefreshKey(prev => prev + 1);
+      }, 50);
+      setTimeout(() => {
+        setRefreshKey(prev => prev + 1);
+      }, 150);
+      setTimeout(() => {
+        setRefreshKey(prev => prev + 1);
+      }, 300);
+      // Also check localStorage after a delay
+      setTimeout(() => {
+        checkForUpdates();
+      }, 100);
     };
     
     const handleStorageChange = (e: StorageEvent) => {
@@ -719,20 +961,54 @@ export default function PackerOverview() {
       }
     };
     
+    // Initial signature check
+    checkForUpdates();
+    
+    const handleForceRefresh = () => {
+      console.log('🔄 Force refresh event received');
+      setRefreshKey(prev => prev + 1);
+      setTimeout(() => {
+        checkForUpdates();
+      }, 50);
+    };
+    
+    const handlePackerRefresh = () => {
+      console.log('🔄 Packer refresh event received');
+      setRefreshKey(prev => prev + 1);
+      
+      // Also clean up selected packers for auto-assign to remove deleted packers
+      try {
+        const deletedPackers = JSON.parse(localStorage.getItem('deleted-packers') || '[]');
+        const deletedIds = new Set(deletedPackers);
+        const savedSelected = JSON.parse(localStorage.getItem('selectedPackersForAutoAssign') || '[]');
+        const filteredSelected = savedSelected.filter((id: string) => !deletedIds.has(id));
+        
+        if (filteredSelected.length !== savedSelected.length) {
+          localStorage.setItem('selectedPackersForAutoAssign', JSON.stringify(filteredSelected));
+          // Update state - the useEffect watching showPackerSelectionDialog will handle updating if dialog is open
+          setSelectedPackersForAutoAssign(prev => {
+            const newSet = new Set(filteredSelected);
+            return newSet;
+          });
+        }
+      } catch (error) {
+        console.error('Error cleaning up selected packers:', error);
+      }
+    };
+    
     window.addEventListener('orderStatusUpdated', handleOrderUpdate);
     window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('forceOrderRefresh', handleForceRefresh);
+    window.addEventListener('forcePackerRefresh', handlePackerRefresh);
     
-    // Poll for updates (fallback)
-    const pollInterval = setInterval(() => {
-      const storedOrders = localStorage.getItem('warehouse-orders');
-      if (storedOrders) {
-        handleOrderUpdate();
-      }
-    }, 2000);
+    // Poll for updates (fallback) - check localStorage for changes
+    const pollInterval = setInterval(checkForUpdates, 300); // Poll every 300ms for faster updates
     
     return () => {
       window.removeEventListener('orderStatusUpdated', handleOrderUpdate);
       window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('forceOrderRefresh', handleForceRefresh);
+      window.removeEventListener('forcePackerRefresh', handlePackerRefresh);
       clearInterval(pollInterval);
     };
   }, []);
@@ -786,7 +1062,7 @@ export default function PackerOverview() {
 
   const handleConfirmAssignment = () => {
     if (selectedPacker) {
-      const packer = packers.find(p => p.id === selectedPacker);
+      const packer = allPackers.find((p: any) => p.id === selectedPacker);
       
       console.log('🔧 Manual assignment:', {
         selectedOrders: Array.from(selectedOrders),
@@ -832,7 +1108,7 @@ export default function PackerOverview() {
 
   const handleConfirmReassignment = () => {
     if (reassignPacker && orderToReassign) {
-      const packer = packers.find(p => p.id === reassignPacker);
+      const packer = allPackers.find((p: any) => p.id === reassignPacker);
       const order = orders.find(o => o.id === orderToReassign);
       
       if (packer && order) {
@@ -864,8 +1140,22 @@ export default function PackerOverview() {
 
   // Centralized status update function - works with buttons and real-time updates
   const updateOrderStatusCentralized = (orderId: string, newStatus: 'pending' | 'assigned' | 'packed' | 'out_of_stock', source: 'button' | 'mobile' | 'api' = 'button') => {
-    // Get order details first
-    const order = orders.find(o => o.id === orderId);
+    // Get order details first - try localStorage for latest data, then fallback to context
+    let order = orders.find(o => o.id === orderId);
+    
+    // If not found in context, try localStorage
+    if (!order) {
+      try {
+        const storedOrders = localStorage.getItem('warehouse-orders');
+        if (storedOrders) {
+          const parsedOrders = JSON.parse(storedOrders);
+          order = parsedOrders.find((o: any) => o.id === orderId);
+        }
+      } catch (error) {
+        console.error('Error reading from localStorage:', error);
+      }
+    }
+    
     if (!order) {
       console.error(`Order ${orderId} not found`);
       toast.error(`Order ${orderId} not found`);
@@ -905,7 +1195,7 @@ export default function PackerOverview() {
     // If order has packer ID but no name, resolve it from packers list
     let packerName = order.assigned_packer_name;
     if (order.assigned_packer_id && !packerName) {
-      const packer = packers.find(p => p.id === order.assigned_packer_id);
+      const packer = allPackers.find((p: any) => p.id === order.assigned_packer_id);
       if (packer) {
         packerName = packer.name;
       }
@@ -913,6 +1203,12 @@ export default function PackerOverview() {
     
     // Update the order with both status and packing_status
     // Use updateOrder directly to ensure both fields are updated
+    console.log(`📝 Calling updateOrder for ${orderId}:`, {
+      status: orderStatus,
+      packing_status: newStatus,
+      packerName: order.assigned_packer_id && packerName ? packerName : order.assigned_packer_name
+    });
+    
     updateOrder(orderId, {
       status: orderStatus,
       packing_status: newStatus,
@@ -923,18 +1219,62 @@ export default function PackerOverview() {
     // Also call updateOrderStatus for consistency
     updateOrderStatus(orderId, orderStatus, newStatus);
     
-    // Force immediate refresh to update UI
-    setRefreshKey(prev => prev + 1);
-    
-    // Also force a delayed refresh to ensure UI updates
+    // Verify the update was saved to localStorage
     setTimeout(() => {
-      setRefreshKey(prev => prev + 1);
-    }, 200);
+      try {
+        const storedOrders = localStorage.getItem('warehouse-orders');
+        if (storedOrders) {
+          const parsedOrders = JSON.parse(storedOrders);
+          const updatedOrder = parsedOrders.find((o: any) => o.id === orderId);
+          if (updatedOrder) {
+            console.log(`✅ Verified update in localStorage for ${orderId}:`, {
+              packing_status: updatedOrder.packing_status,
+              status: updatedOrder.status
+            });
+          } else {
+            console.warn(`⚠️ Order ${orderId} not found in localStorage after update`);
+          }
+        }
+      } catch (error) {
+        console.error('Error verifying localStorage update:', error);
+      }
+    }, 100);
     
     // Dispatch event to notify OrderDetail and other components of the update
     window.dispatchEvent(new CustomEvent('orderStatusUpdated', {
       detail: { orderId, status: orderStatus, packingStatus: newStatus, packerName: packerName || order.assigned_packer_name }
     }));
+    
+    // Force immediate refresh - update refreshKey multiple times to ensure UI updates
+    setRefreshKey(prev => prev + 1);
+    
+    // Force multiple refreshes with delays to ensure UI updates after localStorage write and context update
+    // Small delays to ensure localStorage write completes and context updates
+    setTimeout(() => {
+      setRefreshKey(prev => prev + 1);
+    }, 50);
+    
+    setTimeout(() => {
+      setRefreshKey(prev => prev + 1);
+    }, 150);
+    
+    setTimeout(() => {
+      setRefreshKey(prev => prev + 1);
+    }, 300);
+    
+    setTimeout(() => {
+      setRefreshKey(prev => prev + 1);
+    }, 500);
+    
+    // Final refresh after context has definitely updated
+    setTimeout(() => {
+      setRefreshKey(prev => prev + 1);
+    }, 1000);
+    
+    // Also trigger a custom event to force other components to refresh
+    setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('forceOrderRefresh'));
+    }, 100);
     
     const orderNumber = order.order_number || orderId;
     
@@ -997,14 +1337,29 @@ export default function PackerOverview() {
 
   const handleConfirmStatusChange = () => {
     if (newPackingStatus && selectedOrders.size > 0) {
-      selectedOrders.forEach(orderId => {
-        updateOrderStatusCentralized(
-          orderId,
-          newPackingStatus as 'pending' | 'assigned' | 'packed' | 'out_of_stock'
-        );
+      const orderIds = Array.from(selectedOrders);
+      const statusToSet = newPackingStatus as 'pending' | 'assigned' | 'packed' | 'out_of_stock';
+      
+      // Map packing status to order status
+      let orderStatus: 'Placed' | 'Accepted' | 'Packed' | 'Items No Stock';
+      switch (statusToSet) {
+        case 'pending': orderStatus = 'Placed'; break;
+        case 'assigned': orderStatus = 'Accepted'; break;
+        case 'packed': orderStatus = 'Packed'; break;
+        case 'out_of_stock': orderStatus = 'Items No Stock'; break;
+        default: orderStatus = 'Placed';
+      }
+      
+      // Update all orders directly
+      orderIds.forEach(orderId => {
+        updateOrder(orderId, {
+          packing_status: statusToSet,
+          status: orderStatus,
+          updated_at: new Date().toISOString()
+        });
       });
       
-      toast.success(`Updated status for ${selectedOrders.size} order(s)`);
+      toast.success(`Updated status for ${orderIds.length} order${orderIds.length > 1 ? 's' : ''} to ${newPackingStatus.toUpperCase()}`);
       setSelectedOrders(new Set());
       setShowStatusChangeDialog(false);
       setNewPackingStatus('');
@@ -1015,6 +1370,7 @@ export default function PackerOverview() {
     setShowStatusChangeDialog(false);
     setNewPackingStatus('');
   };
+
 
   // Auto-update simulation (for testing without buttons)
   // Commented out to prevent random status changes
@@ -1251,8 +1607,135 @@ export default function PackerOverview() {
             <span className="text-sm">Auto Assign</span>
             <Switch checked={autoAssign} onCheckedChange={handleAutoAssignChange} />
           </div>
+          <Button onClick={() => navigate('/order-management/create-packer')} className="gap-2">
+            <UserPlus className="h-4 w-4" />
+            New Packer
+          </Button>
         </div>
       </div>
+
+      {/* Packer Selection Dialog for Auto-Assign */}
+      <Dialog open={showPackerSelectionDialog} onOpenChange={(open) => {
+        if (!open) {
+          handleCancelPackerSelection();
+        }
+      }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-xl">Select Packers for Auto-Assignment</DialogTitle>
+            <p className="text-sm text-muted-foreground">
+              Choose which packers should receive new orders automatically. Orders will be distributed one by one among selected packers.
+            </p>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            {/* Select All Checkbox */}
+            <div className="flex items-center gap-2 pb-3 border-b">
+              <Checkbox
+                id="select-all-packers"
+                checked={activePackersCount > 0 && selectedPackersForAutoAssign.size === activePackersCount}
+                onCheckedChange={handleSelectAllPackers}
+              />
+              <label htmlFor="select-all-packers" className="text-sm font-medium cursor-pointer">
+                Select All Active Packers ({activePackersCount})
+              </label>
+            </div>
+
+            {/* Packer List */}
+            <ScrollArea className="h-[400px] rounded-md border p-4">
+              <div className="space-y-2">
+                {allPackers.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    No packers available
+                  </div>
+                ) : (
+                  allPackers.map((packer: any) => {
+                    const isActive = packer.active !== false && packer.sync_status !== 'offline';
+                    const isSelected = selectedPackersForAutoAssign.has(packer.id);
+                    
+                    return (
+                      <div
+                        key={packer.id}
+                        className={`p-4 rounded-lg border transition-all ${
+                          !isActive 
+                            ? 'opacity-50 cursor-not-allowed bg-muted/30' 
+                            : isSelected
+                            ? 'border-primary bg-primary/5 cursor-pointer'
+                            : 'hover:bg-muted/50 cursor-pointer'
+                        }`}
+                        onClick={() => {
+                          if (isActive) {
+                            handleTogglePackerForAutoAssign(packer.id, !isSelected);
+                          }
+                        }}
+                      >
+                        <div className="flex items-center gap-3">
+                          <Checkbox
+                            checked={isSelected}
+                            onCheckedChange={(checked) => {
+                              if (isActive) {
+                                handleTogglePackerForAutoAssign(packer.id, checked as boolean);
+                              }
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            disabled={!isActive}
+                          />
+                          <div className="flex-1 flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <User className="h-4 w-4 text-muted-foreground" />
+                              <span className="font-semibold">{packer.name}</span>
+                              <Badge variant="outline" className="text-xs">
+                                {packer.id}
+                              </Badge>
+                              <Badge className={
+                                packer.sync_status === 'synced' 
+                                  ? 'bg-success/10 text-success border-success/20'
+                                  : packer.sync_status === 'active'
+                                  ? 'bg-warning/10 text-warning border-warning/20'
+                                  : 'bg-destructive/10 text-destructive border-destructive/20'
+                              }>
+                                {packer.sync_status === 'synced' ? '🟢' : packer.sync_status === 'active' ? '🟡' : '🔴'}
+                              </Badge>
+                              {!isActive && (
+                                <Badge variant="secondary" className="text-xs">
+                                  Inactive
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                              <div className="flex items-center gap-1">
+                                <Phone className="h-3 w-3" />
+                                <span>{packer.phone}</span>
+                              </div>
+                              {packer.zone && (
+                                <Badge variant="secondary" className="text-xs">
+                                  {packer.zone}
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </ScrollArea>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={handleCancelPackerSelection}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleConfirmPackerSelection}
+              disabled={selectedPackersForAutoAssign.size === 0}
+            >
+              Confirm Selection ({selectedPackersForAutoAssign.size} packer{selectedPackersForAutoAssign.size !== 1 ? 's' : ''})
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Manual Assignment Banner */}
       {!autoAssign && (
@@ -1270,16 +1753,16 @@ export default function PackerOverview() {
         <Card><CardContent className="p-4 space-y-1">
           <p className="text-sm text-muted-foreground">Active Packers</p>
           <p className="text-3xl font-bold">
-            {packers.filter(p => 
+            {allPackers.filter((p: any) => 
               p.sync_status !== 'offline' && 
               enrichedOrders.some(o => o.assigned_packer_id === p.id)
             ).length}
           </p>
-          <p className="text-xs text-muted-foreground">of {packers.length} total</p>
+          <p className="text-xs text-muted-foreground">of {allPackers.length} total</p>
         </CardContent></Card>
         <Card><CardContent className="p-4 space-y-1">
           <p className="text-sm text-muted-foreground">Assigned</p>
-          <p className="text-3xl font-bold">{enrichedOrders.filter(o => o.packing_status === 'assigned').length}</p>
+          <p className="text-3xl font-bold">{enrichedOrders.filter(o => o.packing_status === 'assigned' || o.packing_status === 'in_process').length}</p>
           <p className="text-xs text-muted-foreground">currently assigned</p>
         </CardContent></Card>
         <Card><CardContent className="p-4 space-y-1">
@@ -1308,268 +1791,6 @@ export default function PackerOverview() {
         </CardContent></Card>
       </div>
 
-      {/* Orders Management */}
-      <Card>
-        <CardContent className="p-6 space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Orders Management ({filteredOrders.length})</h2>
-            {selectedOrders.size > 0 && (
-              <div className="flex items-center gap-2">
-                {!autoAssign && (
-                  <>
-                <Button variant="outline" size="sm" onClick={handleUnassign}>
-                  Unassign ({selectedOrders.size})
-                </Button>
-                <Button size="sm" onClick={handleAssign}>
-                  Assign to Packer
-                    </Button>
-                  </>
-                )}
-                <Button variant="secondary" size="sm" onClick={handleManualStatusChange}>
-                  Change Status ({selectedOrders.size})
-                </Button>
-              </div>
-            )}
-          </div>
-
-          {/* Search Bar and Filters */}
-          <div className="flex items-center gap-3">
-            <div className="relative flex-1 max-w-[612px]">
-              <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Search orders, customers, or packers..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-10 h-10" />
-            </div>
-            <Select value={zoneFilter} onValueChange={setZoneFilter}>
-              <SelectTrigger className="w-[160px] h-10">
-                <SelectValue placeholder="All Pincode Zone" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Pincode Zone</SelectItem>
-                <SelectItem value="110001">110001</SelectItem>
-                <SelectItem value="110016">110016</SelectItem>
-                <SelectItem value="110075">110075</SelectItem>
-                <SelectItem value="110024">110024</SelectItem>
-                <SelectItem value="110005">110005</SelectItem>
-                <SelectItem value="110017">110017</SelectItem>
-                <SelectItem value="110034">110034</SelectItem>
-                <SelectItem value="110048">110048</SelectItem>
-                <SelectItem value="110058">110058</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={packerFilter} onValueChange={setPackerFilter}>
-              <SelectTrigger className="w-[140px] h-10">
-                <SelectValue placeholder="All Packers" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Packers</SelectItem>
-                {packers.map(p => (
-                  <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            
-            {/* Pagination Controls */}
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setOrdersCurrentPage(Math.max(1, ordersCurrentPage - 1))}
-                disabled={ordersCurrentPage === 1}
-                className="h-10"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <span className="text-sm text-muted-foreground px-2">
-                {ordersCurrentPage} of {totalOrdersPages}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setOrdersCurrentPage(Math.min(totalOrdersPages, ordersCurrentPage + 1))}
-                disabled={ordersCurrentPage === totalOrdersPages}
-                className="h-10"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-
-          {/* Tabs for Status Filtering */}
-          <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as FilterTab)}>
-            <TabsList className="w-full grid grid-cols-5">
-              <TabsTrigger value="all" className="flex items-center gap-2">
-                All
-                <Badge variant="secondary" className="ml-1 h-5 px-2">
-                  {statusCounts.all}
-                </Badge>
-              </TabsTrigger>
-              <TabsTrigger value="assigned" className="flex items-center gap-2">
-                Assigned
-                <Badge variant="secondary" className="ml-1 h-5 px-2">
-                  {statusCounts.assigned}
-                </Badge>
-              </TabsTrigger>
-              <TabsTrigger value="pending" className="flex items-center gap-2">
-                Pending
-                <Badge variant="secondary" className="ml-1 h-5 px-2">
-                  {statusCounts.pending}
-                </Badge>
-              </TabsTrigger>
-              <TabsTrigger value="packed" className="flex items-center gap-2">
-                Packed
-                <Badge variant="secondary" className="ml-1 h-5 px-2">
-                  {statusCounts.packed}
-                </Badge>
-              </TabsTrigger>
-            <TabsTrigger value="items-Out-of-stock" className="flex items-center gap-2">
-              Items No Stock
-              <Badge variant="destructive" className="ml-1 h-5 px-2 bg-red-500 text-white">
-                {statusCounts["items-Out-of-stock"]}
-              </Badge>
-            </TabsTrigger>
-            </TabsList>
-
-            <TabsContent value={activeTab} className="mt-4">
-          {/* Orders Table */}
-          <div className="border rounded-lg overflow-hidden">
-                <div className="overflow-x-auto">
-                  <Table className="min-w-[1200px]">
-              <TableHeader>
-                <TableRow>
-                  {!autoAssign && (
-                    <TableHead className="w-12">
-                      <Checkbox
-                        checked={selectedOrders.size === paginatedOrders.length && paginatedOrders.length > 0}
-                        onCheckedChange={handleSelectAll}
-                      />
-                    </TableHead>
-                  )}
-                      <TableHead>Packer</TableHead>
-                      <TableHead>Order ID</TableHead>
-                      <TableHead>Customer</TableHead>
-                      <TableHead>Phone</TableHead>
-                        <TableHead className="text-center">Items</TableHead>
-                      <TableHead>Address</TableHead>
-                      <TableHead>Pincode</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Sync</TableHead>
-                      <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {paginatedOrders.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={!autoAssign ? 11 : 10} className="text-center py-8 text-muted-foreground">
-                      No orders found
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  paginatedOrders.map((order: any) => (
-                    <TableRow 
-                      key={order.id}
-                      className="cursor-pointer hover:bg-muted/50 transition-colors"
-                      onClick={() => handleOrderClick(order.id)}
-                    >
-                      {!autoAssign && (
-                        <TableCell onClick={(e) => e.stopPropagation()}>
-                          <Checkbox
-                            checked={selectedOrders.has(order.id)}
-                            onCheckedChange={(checked) => handleSelectOrder(order.id, checked as boolean)}
-                          />
-                        </TableCell>
-                      )}
-                      <TableCell className="whitespace-nowrap">
-                        <div className="flex items-center gap-2">
-                          {order.assigned_packer_id ? (
-                            // If we have packer ID, always try to show both ID and name
-                            (() => {
-                              const packerName = order.assigned_packer_name || 
-                                packers.find(p => p.id === order.assigned_packer_id)?.name || 
-                                'Unknown Packer';
-                              
-                              // If we found a name but it's not in the order, update it
-                              if (!order.assigned_packer_name && packerName !== 'Unknown Packer') {
-                                updateOrder(order.id, { assigned_packer_name: packerName });
-                              }
-                              
-                              return (
-                            <>
-                              <User className="h-3 w-3 text-muted-foreground" />
-                                  <div className="flex flex-col">
-                                    <span className="text-sm font-medium">{packerName}</span>
-                                    <span className="text-xs text-muted-foreground">{order.assigned_packer_id}</span>
-                                  </div>
-                            </>
-                              );
-                            })()
-                          ) : (
-                            <span className="text-sm text-muted-foreground">Unassigned</span>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell className="font-medium whitespace-nowrap">{order.order_number}</TableCell>
-                      <TableCell className="whitespace-nowrap">{order.customer_name}</TableCell>
-                      <TableCell className="text-sm whitespace-nowrap">{order.customer_phone}</TableCell>
-                      <TableCell className="text-center whitespace-nowrap">
-                        <span className="text-sm font-semibold">{order.items?.length || 0}</span>
-                      </TableCell>
-                      <TableCell className="text-sm whitespace-nowrap max-w-[200px] truncate">
-                        {order.address || 'N/A'}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        <Badge variant="outline" className="bg-gray-100 text-gray-700 border-gray-300">
-                          {order.pincode || 
-                           (order.address ? order.address.split(',').pop()?.trim() : 'N/A') || 
-                           'N/A'}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        {order.packing_status === 'cancelled' ? (
-                          <Badge className="bg-red-100 text-red-700 border-red-200">
-                            ❌ CANCELLED
-                          </Badge>
-                        ) : (
-                          <Badge className={getStatusColor(order.packing_status)}>
-                            {order.packing_status === 'packed' && '✅ '}
-                            {order.packing_status === 'pending' && '⏳ '}
-                            {order.packing_status === 'assigned' && '📋 '}
-                            {order.packing_status === 'out_of_stock' && '🔴 '}
-                            {order.packing_status === 'out_of_stock' ? 'ITEMS NO STOCK' :
-                             order.packing_status?.replace('_', ' ').toUpperCase() || 'PENDING'}
-                          </Badge>
-                        )}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        <div className="flex items-center gap-2">
-                          <WifiOff className="h-4 w-4 text-red-500" />
-                          <span className="text-sm text-gray-700">Sync</span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        <div className="flex items-center gap-1">
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            className="h-7 px-2 text-xs"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleReassignOrder(order.id);
-                            }}
-                          >
-                            Reassign
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
-              </div>
-            </TabsContent>
-          </Tabs>
-        </CardContent>
-      </Card>
 
       {/* Packer Search and Filter Controls */}
       <Card>
@@ -1738,9 +1959,13 @@ export default function PackerOverview() {
         })}
       </div>
 
-      {/* Pagination Controls */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2 mt-6">
+      {/* Pagination Controls - Only show when there are more than 12 cards */}
+      {filteredPackers.length > cardsPerPage && (
+        <div className="flex flex-col items-center gap-3 mt-6">
+          <div className="text-sm text-muted-foreground">
+            Page {currentPage} of {totalPages} &middot; Showing {startIndex + 1}-{Math.min(endIndex, filteredPackers.length)} of {filteredPackers.length} packers
+          </div>
+          <div className="flex items-center justify-center gap-2">
           <Button
             variant="outline"
             size="sm"
@@ -1774,6 +1999,7 @@ export default function PackerOverview() {
             Next
             <ChevronRight className="h-4 w-4" />
           </Button>
+        </div>
         </div>
       )}
 
@@ -1899,7 +2125,7 @@ export default function PackerOverview() {
               </Button>
               <Button
                 onClick={handleConfirmAssignment}
-                disabled={!selectedPacker || packers.find(p => p.id === selectedPacker)?.sync_status === 'offline'}
+                disabled={!selectedPacker || allPackers.find((p: any) => p.id === selectedPacker)?.sync_status === 'offline'}
               >
                 <CheckCircle2 className="h-4 w-4 mr-2" />
                 Assign {selectedOrders.size} Order{selectedOrders.size !== 1 ? 's' : ''}
@@ -1933,8 +2159,8 @@ export default function PackerOverview() {
             {/* Packer List with ScrollArea */}
             <ScrollArea className="h-[400px] rounded-md border p-4">
               <div className="space-y-2">
-                {packers
-                  .filter(packer => 
+                {allPackers
+                  .filter((packer: any) => 
                     packer.name.toLowerCase().includes(packerSearchQuery.toLowerCase()) ||
                     packer.id.toLowerCase().includes(packerSearchQuery.toLowerCase())
                   )
@@ -1943,12 +2169,12 @@ export default function PackerOverview() {
                       No packers found
                     </div>
                   ) : (
-                    packers
-                      .filter(packer => 
+                    allPackers
+                      .filter((packer: any) => 
                         packer.name.toLowerCase().includes(packerSearchQuery.toLowerCase()) ||
                         packer.id.toLowerCase().includes(packerSearchQuery.toLowerCase())
                       )
-                      .map((packer) => (
+                      .map((packer: any) => (
                       <div
                         key={packer.id}
                         className={`p-4 rounded-lg border cursor-pointer transition-all ${
@@ -2031,11 +2257,11 @@ export default function PackerOverview() {
             <Button variant="outline" onClick={() => setShowReassignDialog(false)}>
               Cancel
             </Button>
-            <Button
-              onClick={handleConfirmReassignment}
-              disabled={!reassignPacker || packers.find(p => p.id === reassignPacker)?.sync_status === 'offline'}
-              className="bg-success hover:bg-success/90"
-            >
+              <Button
+                onClick={handleConfirmReassignment}
+                disabled={!reassignPacker || allPackers.find((p: any) => p.id === reassignPacker)?.sync_status === 'offline'}
+                className="bg-success hover:bg-success/90"
+              >
               <CheckCircle2 className="h-4 w-4 mr-2" />
               Reassign Order
             </Button>
